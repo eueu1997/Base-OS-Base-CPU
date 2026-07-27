@@ -1,139 +1,177 @@
+// -----------------------------------------------------------------------------
+// Module      : set_associative_cache
+// File        : set_associative_cache.sv
+// Author      : spt9pad
+// Date        : 2026-07-23
+// Version     : v1.0
+//
+// Functionality
+// - Top-level wrapper that instantiates NUM_SETS cache_set modules.
+// - Address bits [4:2] select and enable one set.
+// - Input to each set is packed as {tag, data}.
+// - Output to CPU is only data payload (BLOCK_SIZE-1:0).
+// - Replace policy is intentionally not implemented in this step.
+// -----------------------------------------------------------------------------
 module set_associative_cache #(
-  parameter int NUM_SETS = 8,
-  parameter int NUM_WAYS = 4,
+  parameter int NUM_SETS   = 8,
+  parameter int NUM_WAYS   = 4,
   parameter int BLOCK_SIZE = 32,
-  parameter int TAG_SIZE = 32 - $clog2(NUM_SETS)
+  parameter int TAG_SIZE   = 27
 )(
-  input logic clk_i,
-  input logic rst_ni,
-  input logic en_i,
-  input logic [31:0] addr_i,
-  input logic [31:0] wdata_i,
-  input logic we_i,
-  output logic [31:0] rdata_o,
-  output logic hit_o
+  input  logic                  clk_i,
+  input  logic                  rst_ni,
+  input  logic                  en_i,
+  input  logic [31:0]           addr_i,
+  input  logic [BLOCK_SIZE-1:0] wdata_i,
+  input  logic                  we_i,
+  output logic [BLOCK_SIZE-1:0] rdata_o,
+  output logic                  hit_o,
+  output logic                  miss_o,
+  // RAM Access for read miss
+  output logic [31:0]           RAM_addr_o,
+  output logic                  RAM_read_req_o,
+  input  logic [BLOCK_SIZE-1:0] RAM_data_i,
+  input  logic                  RAM_read_ack_i
 );
 
-// Cache memory
-logic [BLOCK_SIZE-1:0] cache_mem [NUM_SETS-1:0][NUM_WAYS-1:0];
-logic [TAG_SIZE-1:0] tag_mem [NUM_SETS-1:0][NUM_WAYS-1:0];
-logic [$clog2(NUM_WAYS)-1:0] lru_cnt_s [NUM_SETS-1:0][NUM_WAYS-1:0];
-// Address decoding
-logic [$clog2(NUM_SETS)-1:0] set_index_s;
-logic [TAG_SIZE-1:0] tag_s;
+  localparam int SET_IDX_W = $clog2(NUM_SETS);
+  localparam int LINE_W    = BLOCK_SIZE + TAG_SIZE;
 
-// Replacement FSM typedef
-typedef enum logic [1:0] {
-  IDLE,
-  READ,
-  WRITE,
-  REPLACE
-} cache_state_t;
-cache_state_t state_s;
+  logic [SET_IDX_W-1:0] set_idx_s;
+  logic [TAG_SIZE-1:0]  tag_s;
+  logic [LINE_W-1:0]    data_i_s;
+  logic [NUM_SETS-1:0]  set_en_s;
+  logic [LINE_W-1:0]    set_data_o_s [NUM_SETS-1:0];
+  logic [LINE_W-1:0]    sel_data_o_s;
+  logic [NUM_SETS-1:0]  miss_s;
+  logic [NUM_SETS-1:0]  hit_s;
+  logic                 cache_wb_s;
+  // For 8 sets this is exactly addr_i[4:2].
+  assign set_idx_s = addr_i[4:2];
+  assign tag_s     = addr_i[31:5];
+  assign data_i_s  = {tag_s, wdata_i};
 
-// LRU logic
-logic [$clog2(NUM_WAYS)-1:0] lru_counter [NUM_SETS-1:0];
+  genvar i;
+  generate
+    for (i = 0; i < NUM_SETS; i++) begin : g_cache_set
+      assign set_en_s[i] = en_i && (set_idx_s == i[SET_IDX_W-1:0]);
 
-assign set_index_s = addr_i[$clog2(NUM_SETS)-1:0];
-assign tag_s = addr_i[31:$clog2(NUM_SETS)];
-
-always_ff @(posedge clk_i or negedge rst_ni) begin
-  if (!rst_ni) begin
-    // Reset cache memory and tags
-    for (int i = 0; i < NUM_SETS; i++) begin
-      for (int j = 0; j < NUM_WAYS; j++) begin
-        cache_mem[i][j] <= '0;
-        tag_mem[i][j] <= '0;
-        lru_cnt_s[i][j] <= '0;
-        lru_counter[i] <= '0;
-      end
+      cache_set #(
+        .NUM_SETS   (NUM_SETS),
+        .NUM_WAYS   (NUM_WAYS),
+        .BLOCK_SIZE (BLOCK_SIZE),
+        .TAG_SIZE   (TAG_SIZE)
+      ) u_cache_set (
+        .clk_i   (clk_i),
+        .rst_n_i (rst_ni),
+        .en_i    (set_en_s[i]),
+        .we_i    (we_i),
+        .data_i  (data_i_s),
+        .data_o  (set_data_o_s[i]),
+        .miss_o  (miss_s[i]),
+        .hit_o   (hit_s[i])
+      );
     end
-  end else begin
-    if(en_i) begin
-      if (we_i) begin
-        // Write operation: find a way to write to
-        for (int j = 0; j < NUM_WAYS; j++) begin
-          if (tag_mem[set_index_s][j] == tag_s || tag_mem[set_index_s][j] == '0) begin
-            cache_mem[set_index_s][j] <= wdata_i;
-            tag_mem[set_index_s][j] <= tag_s;
-            // Update LRU counter
-            lru_counter[set_index_s] <= (lru_counter[set_index_s] + 1);
-            break;
-          end
-        end
-      end else begin
-        // Read operation: check for hit
-        hit_o <= 1'b0;
-        for (int j = 0; j < NUM_WAYS; j++) begin
-          if (tag_mem[set_index_s][j] == tag_s) begin
-            rdata_o <= cache_mem[set_index_s][j];
-            hit_o <= 1'b1;
-            // Update LRU counter
-            lru_counter[set_index_s] <= (lru_counter[set_index_s] + 1);
-            break;
-          end
-        end
+  endgenerate
+
+  always_comb begin
+    sel_data_o_s = '0;
+    for (int j = 0; j < NUM_SETS; j++) begin
+      if (set_idx_s == j[SET_IDX_W-1:0]) begin
+        sel_data_o_s = set_data_o_s[j];
       end
     end
   end
-end
 
-// Additional logic for cache replacement policy
-// if hit_o is low, start a read to the next level of memory (e.g., main memory) and update the cache accordingly.
-always_ff @(posedge clk_i or negedge rst_ni) begin
-  if (!rst_ni) begin
-    state_s <= IDLE;
-    en_RAM_o <= 1'b0;
-    data_replaced_s <= 1'b0;
-  end else begin
-    case (state_s)
-      IDLE: begin
-        data_replaced_s <= 1'b0;
-        en_RAM_o <= 1'b0; // Enable read from main memory
-        if (en_i && !hit_o) begin
-          state_s <= READ;
+  assign rdata_o = (cache_wb_s) ? RAM_data_i : sel_data_o_s[BLOCK_SIZE-1:0];
+  assign hit_o   = |hit_s;
+  assign miss_o  = |miss_s;
+  // FSM states. It consider read, read miss, write, write miss.
+  typedef  enum logic [2:0] {
+    idle,
+    read,
+    read_miss,
+    write,
+    write_miss
+  } fsm_state_t;
+
+  fsm_state_t fsm_state_s;
+
+  // Combinational outputs driven by FSM state.
+  always_comb begin
+    RAM_addr_o     = '0;
+    RAM_read_req_o = 1'b0;
+    cache_wb_s     = 1'b0;
+
+    unique case (fsm_state_s)
+      read: begin
+        if (en_i && !we_i && miss_o) begin
+          RAM_addr_o = addr_i;
         end
       end
-      READ: begin
-        en_RAM_o <= 1'b1;
-        data_replaced_s <= 1'b0;
-        if(rdata_RAM_i_valid) begin
-          // Write the data from main memory into the cache
-          for (int j = 0; j < NUM_WAYS; j++) begin
-            if (tag_mem[set_index_s][j] == '0) begin
-              cache_mem[set_index_s][j] <= rdata_RAM_i;
-              tag_mem[set_index_s][j] <= rdata_RAM_i[31:$clog2(NUM_SETS)];
-              data_replaced_s <= 1'b1;
-              break;
-            end
-          end
-          state_s <= REPLACE;
-        end
-      end
-      REPLACE: begin
-        // Replace a way in the cache with the new data from main memory
-        // This is a placeholder for actual replacement logic
-        if (data_replaced_s) begin
-          state_s <= IDLE;
-        end else begin
-          // Implement replacement LRU policy (e.g., LRU, FIFO) here
-          find_lru_way(set_index_s, lru_way);
-          cache_mem[set_index_s][lru_way] <= rdata_RAM_i;
-          tag_mem[set_index_s][lru_way] <= rdata_RAM_i[31:$clog2(NUM_SETS)];
-          data_replaced_s <= 1'b1;
-          state_s <= IDLE;
-        end
+      read_miss: begin
+        // Keep address stable and request asserted until ack.
+        // TODO: possible CDC if RAM clock is slower than cache clock.
+        RAM_addr_o     = addr_i;
+        RAM_read_req_o = ~RAM_read_ack_i;
+        cache_wb_s     = RAM_read_ack_i;
       end
       default: begin
-        state_s <= IDLE;
       end
     endcase
   end
-end
 
-task automatic find_lru_way(input logic [$clog2(NUM_SETS)-1:0] set_index, output logic [$clog2(NUM_WAYS)-1:0] lru_way);
-  // TODO: implement algoritm to find LRU
-  // the algoritm shall, starting from the lru_counter[set_index], find the way with lru_cnt_s[set_index][way] == lru_counter[set_index] +1
-  // that because in a rolling counter, the older way is the "farest" from the actual lru_counter[set_index] value.
-  // return the way index in lru_way
-endtask
+  // Sequential: only FSM state register.
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      fsm_state_s <= idle;
+    end else begin
+      unique case (fsm_state_s)
+        idle: begin
+          if (en_i) begin
+            if (we_i) begin
+              fsm_state_s <= write;
+            end else begin
+              fsm_state_s <= read;
+            end
+          end else begin
+            fsm_state_s <= idle;
+          end
+        end
+        read: begin
+          if (en_i) begin
+            if (!we_i) begin
+              if (miss_o) begin
+                fsm_state_s <= read_miss;
+              end
+            end else begin
+              fsm_state_s <= write;
+            end
+          end
+        end
+        read_miss: begin
+          if (RAM_read_ack_i) begin
+            fsm_state_s <= write;
+          end
+        end
+        write: begin
+          if (en_i) begin
+            if (we_i) begin
+              if (miss_o) begin
+                fsm_state_s <= write_miss;
+              end
+            end else begin
+              fsm_state_s <= read;
+            end
+          end
+        end
+        write_miss: begin
+          fsm_state_s <= read;
+        end
+        default: begin
+          fsm_state_s <= idle;
+        end
+      endcase
+    end
+  end
+endmodule

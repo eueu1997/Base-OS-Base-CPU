@@ -1,21 +1,32 @@
-module cache_set
+module cache_set #
+  (
+  parameter int NUM_SETS = 8,
+  parameter int NUM_WAYS = 4,
+  parameter int BLOCK_SIZE = 32,
+  parameter int TAG_SIZE = 27  // 32-bit addr, 8 sets, 2 offset bits: 32-3-2=27
+  )
   (
     input  logic clk_i,
     input  logic rst_n_i,
-    input  logic [31:0] data_i,
     input  logic en_i,
     input  logic we_i,
-    output logic [31:0] data_o
+    input  logic [BLOCK_SIZE + TAG_SIZE-1:0] data_i,
+    output logic [BLOCK_SIZE + TAG_SIZE-1:0] data_o,
+    output logic miss_o,
+    output logic hit_o
   );
-  logic [31:0] data_s;
-  logic [31:0] data_to_comp[3:0];
-  logic [31:0] shift_s[3:0];
-  logic [3:0] prop_en_s;
-  logic [3:0] eq_s;
+  logic [BLOCK_SIZE + TAG_SIZE-1:0] data_s;
+  logic [BLOCK_SIZE + TAG_SIZE-1:0] data_to_comp[NUM_WAYS-1:0];
+  logic [BLOCK_SIZE + TAG_SIZE-1:0] shift_s[NUM_WAYS-1:0];
+  logic [NUM_WAYS-1:0] prop_en_s;
+  logic [NUM_WAYS-1:0] eq_s;
   // decode of way_sel_i into one-hot enable signals for each cache_way
   assign #1ns shift_s[0] = we_i ? data_i : data_o;
   // Instantiation of 4 cache_way modules
-  cache_way way0 (
+  cache_way #(
+    .BLOCK_SIZE(BLOCK_SIZE),
+    .TAG_SIZE  (TAG_SIZE)
+  ) way0 (
     .clk_i(clk_i),
     .rst_n_i(rst_n_i),
     .shift_i(shift_s[0]),
@@ -27,7 +38,10 @@ module cache_set
     .data_o(data_to_comp[0]),
     .shift_o(shift_s[1])
   );
-  cache_way way1 (
+  cache_way #(
+    .BLOCK_SIZE(BLOCK_SIZE),
+    .TAG_SIZE  (TAG_SIZE)
+  ) way1 (
     .clk_i(clk_i),
     .rst_n_i(rst_n_i),
     .shift_i(shift_s[1]),
@@ -39,7 +53,10 @@ module cache_set
     .data_o(data_to_comp[1]),
     .shift_o(shift_s[2])
   );
-  cache_way way2 (
+  cache_way #(
+    .BLOCK_SIZE(BLOCK_SIZE),
+    .TAG_SIZE  (TAG_SIZE)
+  ) way2 (
     .clk_i(clk_i),
     .rst_n_i(rst_n_i),
     .shift_i(shift_s[2]),
@@ -51,7 +68,10 @@ module cache_set
     .data_o(data_to_comp[2]),
     .shift_o(shift_s[3])
   );
-  cache_way way3 (
+  cache_way #(
+    .BLOCK_SIZE(BLOCK_SIZE),
+    .TAG_SIZE  (TAG_SIZE)
+  ) way3 (
     .clk_i(clk_i),
     .rst_n_i(rst_n_i),
     .shift_i(shift_s[3]),
@@ -64,13 +84,17 @@ module cache_set
     .shift_o() // No next shift_s
   );
 
-  // Equality check logic for each way
-  assign eq_s[0] = en_i && (data_to_comp[0] == data_i);
-  assign eq_s[1] = en_i && (data_to_comp[1] == data_i);
-  assign eq_s[2] = en_i && (data_to_comp[2] == data_i);
-  assign eq_s[3] = en_i && (data_to_comp[3] == data_i);
+  // TAG CHECK LOGIC: Compare the TAG portion of the input data with each way's stored TAG.
+  assign eq_s[0] = en_i & (data_to_comp[0][BLOCK_SIZE + TAG_SIZE-1:BLOCK_SIZE] == data_i[BLOCK_SIZE + TAG_SIZE-1:BLOCK_SIZE]);
+  assign eq_s[1] = en_i & (data_to_comp[1][BLOCK_SIZE + TAG_SIZE-1:BLOCK_SIZE] == data_i[BLOCK_SIZE + TAG_SIZE-1:BLOCK_SIZE]);
+  assign eq_s[2] = en_i & (data_to_comp[2][BLOCK_SIZE + TAG_SIZE-1:BLOCK_SIZE] == data_i[BLOCK_SIZE + TAG_SIZE-1:BLOCK_SIZE]);
+  assign eq_s[3] = en_i & (data_to_comp[3][BLOCK_SIZE + TAG_SIZE-1:BLOCK_SIZE] == data_i[BLOCK_SIZE + TAG_SIZE-1:BLOCK_SIZE]);
 
-  // Output data selection logic
+  // If all eq are 0 while reading we have a miss.
+  assign hit_o = en_i & (|eq_s);
+  assign miss_o = en_i & !(|eq_s);
+
+  // Output the data of the correct tag.
   always_comb begin
     if (eq_s[0]) begin
       data_s = data_to_comp[0];
@@ -81,12 +105,12 @@ module cache_set
     end else if (eq_s[3]) begin
       data_s = data_to_comp[3];
     end else begin
-      data_s = 32'h0000_0000; // Default value if no match
+      data_s = {BLOCK_SIZE + TAG_SIZE{1'b0}}; // Default value if no match
     end
   end
   always_ff @(posedge clk_i or negedge rst_n_i) begin
     if (!rst_n_i) begin
-      data_o <= 32'h0000_0000;
+      data_o <= {BLOCK_SIZE + TAG_SIZE{1'b0}};
     end else begin
       data_o <= data_s;
     end
