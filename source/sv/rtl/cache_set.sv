@@ -13,13 +13,19 @@ module cache_set #
     input  logic [BLOCK_SIZE + TAG_SIZE-1:0] data_i,
     output logic [BLOCK_SIZE + TAG_SIZE-1:0] data_o,
     output logic miss_o,
-    output logic hit_o
+    output logic hit_o,
+    input  logic  refill_i,          // 1 = data from RAM refill (dirty=0)
+    input  logic  clear_dirty3_i,    // pulse to clear dirty of way3 after writeback
+    output logic  dirty3_o,          // dirty bit of way3 (LRU eviction candidate)
+    output logic [TAG_SIZE-1:0]   way3_tag_o,
+    output logic [BLOCK_SIZE-1:0] way3_data_o
   );
   logic [BLOCK_SIZE + TAG_SIZE-1:0] data_s;
   logic [BLOCK_SIZE + TAG_SIZE-1:0] data_to_comp[NUM_WAYS-1:0];
   logic [BLOCK_SIZE + TAG_SIZE-1:0] shift_s[NUM_WAYS-1:0];
   logic [NUM_WAYS-1:0] prop_en_s;
   logic [NUM_WAYS-1:0] eq_s;
+  logic [NUM_WAYS-1:0] dirty_chain_s;  // dirty bit output from each way
   // decode of way_sel_i into one-hot enable signals for each cache_way
   assign #1ns shift_s[0] = we_i ? data_i : data_o;
   // Instantiation of 4 cache_way modules
@@ -34,9 +40,12 @@ module cache_set #
     .en_i(en_i),
     .prop_en_n_i(1'b0), // No previous prop_en_s for the first way
     .eq_i(eq_s[0]),
+    .dirty_i(we_i && !refill_i),  // dirty if CPU write, clean if RAM refill
+    .clear_dirty_i(1'b0),
     .prop_en_o(prop_en_s[1]),
     .data_o(data_to_comp[0]),
-    .shift_o(shift_s[1])
+    .shift_o(shift_s[1]),
+    .dirty_o(dirty_chain_s[0])
   );
   cache_way #(
     .BLOCK_SIZE(BLOCK_SIZE),
@@ -49,9 +58,12 @@ module cache_set #
     .en_i(en_i),
     .prop_en_n_i(prop_en_s[1]),
     .eq_i(eq_s[1]),
+    .dirty_i(dirty_chain_s[0]),  // inherit dirty from way0
+    .clear_dirty_i(1'b0),
     .prop_en_o(prop_en_s[2]),
     .data_o(data_to_comp[1]),
-    .shift_o(shift_s[2])
+    .shift_o(shift_s[2]),
+    .dirty_o(dirty_chain_s[1])
   );
   cache_way #(
     .BLOCK_SIZE(BLOCK_SIZE),
@@ -64,9 +76,12 @@ module cache_set #
     .en_i(en_i),
     .prop_en_n_i(prop_en_s[2]),
     .eq_i(eq_s[2]),
+    .dirty_i(dirty_chain_s[1]),  // inherit dirty from way1
+    .clear_dirty_i(1'b0),
     .prop_en_o(prop_en_s[3]),
     .data_o(data_to_comp[2]),
-    .shift_o(shift_s[3])
+    .shift_o(shift_s[3]),
+    .dirty_o(dirty_chain_s[2])
   );
   cache_way #(
     .BLOCK_SIZE(BLOCK_SIZE),
@@ -79,9 +94,12 @@ module cache_set #
     .en_i(en_i),
     .prop_en_n_i(prop_en_s[3]),
     .eq_i(eq_s[3]),
+    .dirty_i(dirty_chain_s[2]),     // inherit dirty from way2
+    .clear_dirty_i(clear_dirty3_i), // cleared after writeback
     .prop_en_o(), // No next prop_en_s
     .data_o(data_to_comp[3]),
-    .shift_o() // No next shift_s
+    .shift_o(), // No next shift_s
+    .dirty_o(dirty_chain_s[3])
   );
 
   // TAG CHECK LOGIC: Compare the TAG portion of the input data with each way's stored TAG.
@@ -115,5 +133,9 @@ module cache_set #
       data_o <= data_s;
     end
   end
+
+  assign dirty3_o    = dirty_chain_s[3];
+  assign way3_tag_o  = data_to_comp[3][BLOCK_SIZE + TAG_SIZE-1:BLOCK_SIZE];
+  assign way3_data_o = data_to_comp[3][BLOCK_SIZE-1:0];
 
 endmodule

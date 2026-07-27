@@ -52,15 +52,11 @@ module memory_wrapper #(
   logic [BLOCK_SIZE-1:0] ram_cache_rdata_s;
   logic                  ram_cache_read_ack_s;
 
-  // Write-through stub (not yet driven by cache).
+  // Write-back path signals (cache -> CDC bridge -> RAM).
   logic                  cache_ram_write_req_s;
   logic [31:0]           cache_ram_waddr_s;
   logic [BLOCK_SIZE-1:0] cache_ram_wdata_s;
   logic                  ram_cache_write_ack_s;
-
-  assign cache_ram_write_req_s = 1'b0;
-  assign cache_ram_waddr_s     = '0;
-  assign cache_ram_wdata_s     = '0;
 
   // =========================================================================
   // Cache instance (CPU clock domain)
@@ -83,7 +79,11 @@ module memory_wrapper #(
     .RAM_addr_o    (cache_ram_addr_s),
     .RAM_read_req_o(cache_ram_read_req_s),
     .RAM_data_i    (ram_cache_rdata_s),
-    .RAM_read_ack_i(ram_cache_read_ack_s)
+    .RAM_read_ack_i(ram_cache_read_ack_s),
+    .RAM_wr_addr_o (cache_ram_waddr_s),
+    .RAM_wr_req_o  (cache_ram_write_req_s),
+    .RAM_wr_data_o (cache_ram_wdata_s),
+    .RAM_wr_ack_i  (ram_cache_write_ack_s)
   );
 
   // =========================================================================
@@ -174,9 +174,83 @@ module memory_wrapper #(
   assign ram_cache_rdata_s    = ram_rdata_ram_s;
 
   // =========================================================================
-  // CDC Bridge: write-through path (TODO when cache implements write-through)
-  // Same 4-phase structure: sync write_req CPU->RAM, sync write_ack RAM->CPU.
+  // CDC Bridge: write-back path (CPU domain -> RAM domain -> CPU domain)
+  // Same 4-phase level handshake as read path.
+  // Triggered by cache when evicting a dirty way3 (write-back policy).
   // =========================================================================
+
+  // --- Phase 1-2: synchronize write req into RAM domain ---
+  logic wr_req_synced_ram_s;
+
+  cdc_sync_2ff #(.W(1)) u_sync_wr_req (
+    .clk_dst_i  (clk_ram_i),
+    .rst_dst_ni (rst_ni),
+    .data_i     (cache_ram_write_req_s),
+    .data_o     (wr_req_synced_ram_s)
+  );
+
+  logic        wr_req_ram_prev_q;
+  logic        wr_req_rise_ram_s;
+  logic        wr_req_ram_dly_q;
+  logic [31:0]           waddr_ram_q;
+  logic [BLOCK_SIZE-1:0] wdata_ram_q;
+
+  always_ff @(posedge clk_ram_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      wr_req_ram_prev_q <= 1'b0;
+      wr_req_ram_dly_q  <= 1'b0;
+      waddr_ram_q       <= '0;
+      wdata_ram_q       <= '0;
+    end else begin
+      wr_req_ram_prev_q <= wr_req_synced_ram_s;
+      wr_req_ram_dly_q  <= wr_req_rise_ram_s;
+      if (wr_req_rise_ram_s) begin
+        // CDC waiver: addr/data stable throughout writeback state (cache stalls CPU).
+        waddr_ram_q <= cache_ram_waddr_s;
+        wdata_ram_q <= cache_ram_wdata_s;
+      end
+    end
+  end
+
+  assign wr_req_rise_ram_s = wr_req_synced_ram_s & ~wr_req_ram_prev_q;
+
+  // --- Phase 3: level ack for write in RAM domain ---
+  logic ram_write_ack_pulse_s;
+  logic wr_ack_level_ram_q;
+
+  always_ff @(posedge clk_ram_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      wr_ack_level_ram_q <= 1'b0;
+    end else begin
+      if (ram_write_ack_pulse_s) begin
+        wr_ack_level_ram_q <= 1'b1;
+      end else if (~wr_req_synced_ram_s) begin
+        wr_ack_level_ram_q <= 1'b0;
+      end
+    end
+  end
+
+  // --- Phase 4: synchronize write ack into CPU domain ---
+  logic wr_ack_synced_cpu_s;
+
+  cdc_sync_2ff #(.W(1)) u_sync_wr_ack (
+    .clk_dst_i  (clk_cpu_i),
+    .rst_dst_ni (rst_ni),
+    .data_i     (wr_ack_level_ram_q),
+    .data_o     (wr_ack_synced_cpu_s)
+  );
+
+  logic wr_ack_cpu_prev_q;
+
+  always_ff @(posedge clk_cpu_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      wr_ack_cpu_prev_q <= 1'b0;
+    end else begin
+      wr_ack_cpu_prev_q <= wr_ack_synced_cpu_s;
+    end
+  end
+
+  assign ram_cache_write_ack_s = wr_ack_synced_cpu_s & ~wr_ack_cpu_prev_q;
 
   // =========================================================================
   // RAM instance (RAM clock domain - 133 MHz)
@@ -193,11 +267,11 @@ module memory_wrapper #(
     .addr_i     (addr_ram_q),
     .rdata_o    (ram_rdata_ram_s),
     .read_ack_o (ram_read_ack_pulse_s),
-    // Write-through stub.
-    .write_req_i(cache_ram_write_req_s),
-    .waddr_i    (cache_ram_waddr_s),
-    .wdata_i    (cache_ram_wdata_s),
-    .write_ack_o(ram_cache_write_ack_s)
+    // Write-back path (driven by CDC bridge).
+    .write_req_i(wr_req_ram_dly_q),
+    .waddr_i    (waddr_ram_q),
+    .wdata_i    (wdata_ram_q),
+    .write_ack_o(ram_write_ack_pulse_s)
   );
 
 endmodule
