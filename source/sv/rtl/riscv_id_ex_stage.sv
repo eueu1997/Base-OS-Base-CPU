@@ -97,6 +97,13 @@ module riscv_id_ex_stage (
   input  logic        clk_i,
   input  logic        rst_ni,
   input  logic        valid_i,
+  // Freezes all stage output registers (no advance, no bubble) while the WB
+  // stage's data cache controller is servicing a multi-cycle memory access.
+  // This keeps wb_rd_o/wb_we_o/load_valid_o/load_rd_o/mem_*_o correctly
+  // paired with the in-flight memory instruction until WB has consumed
+  // them; see riscv_dcache_ctrl.sv for why the hold cannot simply track
+  // valid_i (a bubble would advance past the still-pending instruction).
+  input  logic        hold_i,
   input  logic [31:0] pc_i,
   input  logic [31:0] instr_i,
   input  logic [31:0] rs1_data_i,
@@ -662,6 +669,9 @@ module riscv_id_ex_stage (
       mem_wdata_o        <= 32'h0000_0000;
       load_valid_o       <= 1'b0;
       load_rd_o          <= 5'd0;
+    end else if (hold_i) begin
+      // Frozen: keep presenting the same in-flight memory instruction to WB
+      // (no assignments here -- all outputs implicitly retain their value).
     end else begin
       wb_valid_o         <= wb_valid_d;
       wb_rd_o            <= wb_rd_d;

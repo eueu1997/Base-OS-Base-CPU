@@ -1,11 +1,30 @@
-module riscv #(
-  parameter int    IMEM_WORDS    = 1024,
-  parameter string IMEM_HEX_FILE = ""
+module riscv # (
+    parameter int LINE_WORDS = 8,
+  parameter int LINE_LENGHT = 2**LINE_WORDS
 ) (
   input  logic        clk_i,
   input  logic        rst_ni,
 
-  output logic        illegal_instr_o
+  output logic        illegal_instr_o,
+
+  // Read-only AHB-Lite master port toward the system bus (instruction fetch).
+  output logic [31:0] ahb_haddr_o,
+  output logic [1:0]  ahb_htrans_o,
+  output logic        ahb_hwrite_o,
+  output logic [2:0]  ahb_hsize_o,
+  input  logic [LINE_LENGHT-1:0] ahb_hrdata_i,
+  input  logic        ahb_hready_i,
+  input  logic        ahb_hresp_i,
+
+  // Read/write AHB-Lite master port toward the system bus (data access).
+  output logic [31:0] dahb_haddr_o,
+  output logic [1:0]  dahb_htrans_o,
+  output logic        dahb_hwrite_o,
+  output logic [2:0]  dahb_hsize_o,
+  output logic [LINE_LENGHT-1:0] dahb_hwdata_o,
+  input  logic [LINE_LENGHT-1:0] dahb_hrdata_i,
+  input  logic        dahb_hready_i,
+  input  logic        dahb_hresp_i
 );
 
   // IF stage outputs.
@@ -25,6 +44,13 @@ module riscv #(
   logic        rs1_exfwd_en;
   logic        rs2_exfwd_en;
   logic        load_use_stall;
+
+  // Asserted by the WB stage's data cache controller while a multi-cycle
+  // load/store access is in flight. Freezes both IF (via stall_i, alongside
+  // the existing load-use interlock) and ID/EX's own output registers (via
+  // hold_i) so the in-flight memory instruction stays parked at the ID/EX->WB
+  // boundary until the access completes.
+  logic        mem_stall;
 
   // Registered outputs from ID/EX stage.
   logic        id_wb_valid_q;
@@ -51,18 +77,25 @@ module riscv #(
 
   // IF stage: compute instruction address and sequential next PC.
   riscv_if_stage #(
-    .IMEM_WORDS    (IMEM_WORDS),
-    .IMEM_HEX_FILE (IMEM_HEX_FILE)
+    .LINE_WORDS    (LINE_WORDS),
+    .LINE_LENGHT   (LINE_LENGHT)
   ) u_if_stage (
     .clk_i               (clk_i),               // Core clock domain for IF/ID stage registers.
     .rst_ni              (rst_ni),               // Active-low reset for IF stage state.
     .pc_redirect_valid_i (id_pc_redirect_valid_q), // Registered branch/jump redirect request from ID/EX stage.
     .pc_redirect_addr_i  (id_pc_redirect_addr_q),  // Registered branch/jump redirect target from ID/EX stage.
-    .stall_i             (load_use_stall),       // Hold PC and IF/ID register on load-use interlock.
+    .stall_i             (load_use_stall | mem_stall), // Hold PC and IF/ID register on load-use interlock or D-cache stall.
     .flush_i             (id_pc_redirect_valid_q & if_valid_q), // Flush IF/ID register on taken branch/jump from ID/EX.
     .if_valid_o          (if_valid_q),           // Registered IF/ID valid consumed by ID/EX stage.
     .if_pc_o             (if_pc_q),              // Registered IF/ID PC consumed by ID/EX stage.
-    .if_instr_o          (if_instr_q)            // Registered IF/ID instruction consumed by ID/EX stage.
+    .if_instr_o          (if_instr_q),           // Registered IF/ID instruction consumed by ID/EX stage.
+    .ahb_haddr_o         (ahb_haddr_o),          // Instruction fetch AHB-Lite address phase, passed through to top.
+    .ahb_htrans_o        (ahb_htrans_o),         // Instruction fetch AHB-Lite transfer type, passed through to top.
+    .ahb_hwrite_o        (ahb_hwrite_o),         // Tied low: instruction fetch is read-only.
+    .ahb_hsize_o         (ahb_hsize_o),          // Instruction fetch AHB-Lite transfer size (word).
+    .ahb_hrdata_i        (ahb_hrdata_i),         // Instruction fetch AHB-Lite read data from the system bus.
+    .ahb_hready_i        (ahb_hready_i),         // Instruction fetch AHB-Lite transfer-done/wait-state input.
+    .ahb_hresp_i         (ahb_hresp_i)           // Instruction fetch AHB-Lite response (not evaluated in v1).
   );
 
   assign rs1_addr = if_instr_q[19:15];
@@ -106,6 +139,7 @@ module riscv #(
   riscv_id_ex_stage u_id_ex_stage (
     .clk_i              (clk_i),                  // Core clock for stage output registers.
     .rst_ni             (rst_ni),                 // Active-low reset for ID/EX outputs.
+    .hold_i             (mem_stall),              // Freeze stage outputs while WB's D-cache access is in flight.
     .valid_i            (if_valid_q & ~load_use_stall & ~id_pc_redirect_valid_q), // Kill wrong-path instruction on redirect and inject bubble on load-use interlock.
     .pc_i               (if_pc_q),                // IF/ID PC used by AUIPC/JAL/JALR/BRANCH address generation.
     .instr_i            (if_instr_q),             // IF/ID instruction word to decode.
@@ -130,7 +164,10 @@ module riscv #(
     .load_rd_o          (load_rd_q)               // Registered load destination register for WB mux selection.
   );
 
-  riscv_wb_stage u_wb_stage (
+  riscv_wb_stage #(
+    .LINE_WORDS  (LINE_WORDS),
+    .LINE_LENGHT (LINE_LENGHT)
+  ) u_wb_stage (
     .clk_i      (clk_i),      // Core clock for WB output registers and DMEM writes.
     .rst_ni     (rst_ni),     // Active-low reset for WB output registers.
     // ALU writeback from ID/EX stage outputs.
@@ -149,7 +186,18 @@ module riscv #(
     // Register file interface
     .rf_we_o    (wb_rf_we),    // Final regfile write enable after WB arbitration.
     .rf_waddr_o (wb_rf_waddr), // Final regfile destination register.
-    .rf_wdata_o (wb_rf_wdata)  // Final regfile write data (ALU path or load path).
+    .rf_wdata_o (wb_rf_wdata), // Final regfile write data (ALU path or load path).
+    // Pipeline stall while the D-cache controller services a multi-cycle access.
+    .mem_stall_o (mem_stall),
+    // D-side AHB-Lite master port, passed straight through to top.
+    .ahb_haddr_o  (dahb_haddr_o),
+    .ahb_htrans_o (dahb_htrans_o),
+    .ahb_hwrite_o (dahb_hwrite_o),
+    .ahb_hsize_o  (dahb_hsize_o),
+    .ahb_hwdata_o (dahb_hwdata_o),
+    .ahb_hrdata_i (dahb_hrdata_i),
+    .ahb_hready_i (dahb_hready_i),
+    .ahb_hresp_i  (dahb_hresp_i)
   );
 
 endmodule
