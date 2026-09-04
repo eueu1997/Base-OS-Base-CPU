@@ -11,30 +11,35 @@
 // - Standalone testbench for riscv_icache, driven directly at its core-side
 //   fetch interface (req_i/addr_i/rdata_o/rvalid_o).
 // - Models the AHB-Lite slave side with a simple identity memory (returned
-//   word data == its own word address), so any addressing/refill-sequencing
+//   word data == its own byte address), so any addressing/refill-sequencing
 //   bug shows up directly as a data mismatch.
 // - Exercises: cold miss + line hit-after-refill, a second line (different
 //   index), direct-mapped conflict eviction, and refill with injected AHB
 //   wait states.
 // - Also runs continuous AHB-Lite protocol sanity checks on the master port
-//   (read-only/word-only, HADDR/HTRANS held stable during wait states).
+//   (read-only, fixed line-size transfers, HADDR/HTRANS held stable during
+//   wait states).
 //
 // Integration Notes
-// - Uses a small, non-default cache geometry (4 lines x 4 words = 64 B) to
+// - Uses a small, non-default cache geometry (2 lines x 8 words = 64 B) to
 //   keep the tag/index/offset arithmetic easy to follow and to reach a
 //   conflict-miss scenario with only a couple of test addresses.
+// - ICACHE_LINE_WORDS_TB stays at the RTL default (8): riscv_icache sizes
+//   ahb_hrdata_i as 2**ICACHE_LINE_WORDS bits, which only equals
+//   ICACHE_LINE_WORDS*32 for this value, so only NUM_LINES is shrunk here.
 // -----------------------------------------------------------------------------
 module riscv_icache_tb;
 
   localparam time CLK_PERIOD = 10ns;
-  localparam int  ICACHE_LINE_WORDS_TB = 4;  // 16 B lines
-  localparam int  ICACHE_NUM_LINES_TB  = 4;  // 64 B total
+  localparam int  ICACHE_LINE_WORDS_TB = 8;  // 32 B lines (kept at the RTL default, see note above)
+  localparam int  ICACHE_NUM_LINES_TB  = 2;  // 64 B total, small enough to force an index conflict
   localparam int  TIMEOUT_CYCLES       = 50; // deadlock guard for fetch_and_check
 
   // AHB-Lite HTRANS/HSIZE encodings, mirrored here for verification only.
   localparam logic [1:0] HTRANS_IDLE   = 2'b00;
   localparam logic [1:0] HTRANS_NONSEQ = 2'b10;
-  localparam logic [2:0] HSIZE_WORD    = 3'b010;
+  // riscv_icache always transfers a whole line per refill (see HSIZE_LINE in the DUT).
+  localparam logic [2:0] HSIZE_LINE_TB = 3'($clog2(ICACHE_LINE_WORDS_TB) + 2);
 
   logic        clk;
   logic        rst_n;
@@ -50,7 +55,7 @@ module riscv_icache_tb;
   logic [1:0]  ahb_htrans;
   logic        ahb_hwrite;
   logic [2:0]  ahb_hsize;
-  logic [31:0] ahb_hrdata;
+  logic [255:0] ahb_hrdata;
   logic        ahb_hready;
   logic        ahb_hresp;
 
@@ -130,8 +135,10 @@ module riscv_icache_tb;
   // Wait-state case: hready is low until slave_wait_cnt_q reaches 0.
   assign ahb_hready = slave_busy_q ? (slave_wait_cnt_q == 0)
                                     : (!ahb_htrans[1] || (tb_wait_cycles == 0));
-  // Identity memory: data phase always reflects the currently held address.
-  assign ahb_hrdata = ahb_haddr;
+  // Identity memory: word i of the line holds its own byte address
+  // (haddr + i*4), matching fetch_and_check's comparison against addr_i.
+  assign ahb_hrdata = {ahb_haddr+32'd28, ahb_haddr+32'd24, ahb_haddr+32'd20, ahb_haddr+32'd16,
+                        ahb_haddr+32'd12, ahb_haddr+32'd8,  ahb_haddr+32'd4,  ahb_haddr};
   assign ahb_hresp  = 1'b0; // OKAY; error responses are not exercised here.
 
   // -----------------------------------------------------------------------
@@ -141,21 +148,22 @@ module riscv_icache_tb;
   logic [1:0]  prev_htrans_q;
   logic        prev_hready_q;
   logic        prev_valid_q;
-  logic        error_count_q;
+  int          error_count_q;
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       prev_haddr_q  <= 32'h0000_0000;
       prev_htrans_q <= HTRANS_IDLE;
       prev_hready_q <= 1'b1;
       prev_valid_q  <= 1'b0;
+      error_count_q <= 0;
     end else begin
-      // Read-only, word-only master: must hold on every cycle.
+      // Read-only master: must hold on every cycle.
       if (ahb_hwrite !== 1'b0) begin
         $display("[TB][ERROR] AHB protocol: hwrite_o asserted unexpectedly");
         error_count_q <= error_count_q + 1'b1;
       end
-      if (ahb_htrans[1] && (ahb_hsize !== HSIZE_WORD)) begin
-        $display("[TB][ERROR] AHB protocol: hsize_o != WORD during an active transfer");
+      if (ahb_htrans[1] && (ahb_hsize !== HSIZE_LINE_TB)) begin
+        $display("[TB][ERROR] AHB protocol: hsize_o != expected line size during an active transfer");
         error_count_q <= error_count_q + 1'b1;
       end
       // If the previous cycle left a transfer in a wait state (active
@@ -178,8 +186,9 @@ module riscv_icache_tb;
   // Fetch-and-check task: drives a fetch request and waits for rvalid_o,
   // checking the returned data against the identity-memory model.
   // -----------------------------------------------------------------------
+  int cycles;
   task automatic fetch_and_check(input logic [31:0] addr, input string label);
-    int cycles;
+
     begin
       req_i  = 1'b1;
       addr_i = addr;
@@ -212,26 +221,26 @@ module riscv_icache_tb;
     @(posedge rst_n);
     @(posedge clk);
 
-    $display("\n=== Cold miss + line hit-after-refill (line 0) ===");
-    fetch_and_check(32'h0000_0000, "miss  word0/line0");
-    fetch_and_check(32'h0000_0004, "hit   word1/line0");
-    fetch_and_check(32'h0000_0008, "hit   word2/line0");
-    fetch_and_check(32'h0000_000C, "hit   word3/line0");
+    $display("\n=== Cold miss + line hit-after-refill (index 0) ===");
+    fetch_and_check(32'h0000_0000, "miss  word0/index0");
+    fetch_and_check(32'h0000_0004, "hit   word1/index0");
+    fetch_and_check(32'h0000_0008, "hit   word2/index0");
+    fetch_and_check(32'h0000_001C, "hit   word7/index0");
 
     $display("\n=== Second line, different index (index 1) ===");
-    fetch_and_check(32'h0000_0010, "miss  word0/line1");
-    fetch_and_check(32'h0000_0014, "hit   word1/line1");
-    fetch_and_check(32'h0000_001C, "hit   word3/line1");
+    fetch_and_check(32'h0000_0020, "miss  word0/index1");
+    fetch_and_check(32'h0000_0024, "hit   word1/index1");
+    fetch_and_check(32'h0000_003C, "hit   word7/index1");
 
     $display("\n=== Direct-mapped conflict eviction (same index 0, different tag) ===");
-    fetch_and_check(32'h0000_0040, "miss  new tag @ index0 (evicts line0)");
+    fetch_and_check(32'h0000_0040, "miss  new tag @ index0 (evicts index0 line)");
     fetch_and_check(32'h0000_0000, "miss  original tag @ index0 (thrash)");
-    fetch_and_check(32'h0000_0004, "hit   word1 of re-refilled line0");
+    fetch_and_check(32'h0000_0004, "hit   word1 of re-refilled index0 line");
 
     $display("\n=== Refill with injected AHB wait states ===");
     tb_wait_cycles = 2;
-    fetch_and_check(32'h0000_0020, "miss  word0/line2 (2 wait states/xfer)");
-    fetch_and_check(32'h0000_0024, "hit   word1/line2");
+    fetch_and_check(32'h0000_0060, "miss  new tag @ index1 (2 wait states/xfer)");
+    fetch_and_check(32'h0000_0064, "hit   word1/index1");
     tb_wait_cycles = 0;
     error_count = error_count_i + error_count_q;
     if (error_count == 0) begin

@@ -27,9 +27,8 @@
 // -----------------------------------------------------------------------------
 module riscv_icache #(
   parameter int ICACHE_LINE_WORDS = 8,   // words per line (8 -> 256-bit line)
-  parameter int ICACHE_NUM_LINES  = 128, // number of lines
-  parameter int LINE_WORDS = 8,
-  parameter int LINE_LENGHT = 2**LINE_WORDS  // line width in bits (default 256)
+  parameter int ICACHE_NUM_LINES  = 128 // number of lines
+    // line width in bits (default 256)
 ) (
   input  logic        clk_i,
   input  logic        rst_ni,
@@ -45,7 +44,7 @@ module riscv_icache #(
   output logic [1:0]  ahb_htrans_o,
   output logic        ahb_hwrite_o,
   output logic [2:0]  ahb_hsize_o,
-  input  logic [LINE_LENGHT-1:0] ahb_hrdata_i,
+  input  logic [2**ICACHE_LINE_WORDS-1:0] ahb_hrdata_i,
   input  logic        ahb_hready_i,
   input  logic        ahb_hresp_i
 );
@@ -53,8 +52,9 @@ module riscv_icache #(
   // AHB-Lite HTRANS encoding (subset used by this read-only master).
   localparam logic [1:0] HTRANS_IDLE   = 2'b00;
   localparam logic [1:0] HTRANS_NONSEQ = 2'b10;
-  // AHB-Lite HSIZE encoding: line-wide transfers only (32 B when LINE_WORDS=8).
-  localparam logic [2:0] HSIZE_LINE    = 3'($clog2(LINE_WORDS) + 2);
+  // AHB-Lite HSIZE encoding: line-wide transfers only (32 B when ICACHE_LINE_WORDS=8).
+  localparam logic [2:0] HSIZE_LINE    = 3'($clog2(ICACHE_LINE_WORDS) + 2);
+  localparam int LINE_LENGHT = 2**ICACHE_LINE_WORDS;
 
   localparam int RAW_OFFSET_BITS = (ICACHE_LINE_WORDS > 1) ? $clog2(ICACHE_LINE_WORDS) : 0;
   localparam int OFFSET_BITS     = (RAW_OFFSET_BITS > 0) ? RAW_OFFSET_BITS : 1;
