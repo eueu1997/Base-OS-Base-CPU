@@ -1,0 +1,1301 @@
+\PassOptionsToPackage{unicode=true}{hyperref} % options for packages loaded elsewhere
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[]{article}
+\usepackage{lmodern}
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\usepackage{fixltx2e} % provides \textsubscript
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provides euro and other symbols
+\else % if luatex or xelatex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Ligatures=TeX,Scale=MatchLowercase}
+\fi
+% use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+% use microtype if available
+\IfFileExists{microtype.sty}{%
+\usepackage[]{microtype}
+\UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\IfFileExists{parskip.sty}{%
+\usepackage{parskip}
+}{% else
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt plus 2pt minus 1pt}
+}
+\usepackage{hyperref}
+\hypersetup{
+            pdftitle={Architectural Specification - RISC-V Core (v1)},
+            pdfborder={0 0 0},
+            breaklinks=true}
+\urlstyle{same}  % don't use monospace font for urls
+\usepackage[margin=25mm]{geometry}
+\usepackage{longtable,booktabs}
+% Fix footnotes in tables (requires footnote package)
+\IfFileExists{footnote.sty}{\usepackage{footnote}\makesavenoteenv{longtable}}{}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{0}
+% Redefines (sub)paragraphs to behave more like sections
+\ifx\paragraph\undefined\else
+\let\oldparagraph\paragraph
+\renewcommand{\paragraph}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+\let\oldsubparagraph\subparagraph
+\renewcommand{\subparagraph}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+
+% set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+
+
+\title{Architectural Specification - RISC-V Core (v1)}
+\date{2026-09-01}
+
+\begin{document}
+\maketitle
+
+\hypertarget{architectural-specification---risc-v-core-v1-rtl-snapshot-2026-09-01}{%
+\section{Architectural Specification - RISC-V Core (v1, RTL snapshot
+2026-09-01)}\label{architectural-specification---risc-v-core-v1-rtl-snapshot-2026-09-01}}
+
+\hypertarget{1-document-purpose}{%
+\subsection{1. Document purpose}\label{1-document-purpose}}
+
+Define the initial (simple) specifications for the first version of a
+performance-oriented RISC-V processor, to be used as a baseline for RTL
+implementation, verification, and synthesis.
+
+\hypertarget{2-first-version-goals}{%
+\subsection{2. First version goals}\label{2-first-version-goals}}
+
+\begin{itemize}
+\tightlist
+\item
+  32-bit core for rapid ASIC flow bring-up.
+\item
+  Main focus: performance compatible with limited complexity.
+\item
+  Synthesizable and easily extensible core datapath.
+\item
+  Bring-up integration with cache, bus, and behavioral RAM; the sparse
+  RAM model and some cache constructs are not ASIC synthesis targets in
+  the current state.
+\item
+  No multicore support in v1.
+\end{itemize}
+
+\hypertarget{3-isa-profile}{%
+\subsection{3. ISA profile}\label{3-isa-profile}}
+
+\begin{itemize}
+\tightlist
+\item
+  Base architecture: RV32I.
+\item
+  Target privilege mode: M-mode only. Privileged state is not yet
+  implemented: no CSRs, trap entry/return, or interrupts are present.
+\item
+  Extensions in v1:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    M (multiply/divide): not included in the first RTL iteration.
+  \item
+    C (compressed): not included.
+  \item
+    A/F/D: not included.
+  \end{itemize}
+\item
+  Endianness: little-endian.
+\item
+  Instruction alignment: 32 bit.
+\end{itemize}
+
+\hypertarget{4-microarchitecture-simple-v1}{%
+\subsection{4. Microarchitecture (simple
+v1)}\label{4-microarchitecture-simple-v1}}
+
+\begin{itemize}
+\tightlist
+\item
+  3-stage in-order pipeline:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    IF: instruction fetch
+  \item
+    ID/EX: decode + execute
+  \item
+    WB: write-back to register file
+  \end{itemize}
+\item
+  No out-of-order execution.
+\item
+  No branch prediction in v1.
+\item
+  Two reduced AHB-Lite master ports in the core:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    I-side read-only for instruction cache refill.
+  \item
+    D-side read/write for data cache refill and write-back.
+  \end{itemize}
+\item
+  In the \texttt{riscv\_top} wrapper, the two ports are arbitrated
+  toward a unified RAM with a single outstanding transaction and fixed
+  D-side over I-side priority.
+\item
+  Control-flow handling implemented in the current RTL:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    branch/jump resolved in ID/EX with \texttt{pc\_redirect}.
+  \item
+    IF/ID flush on taken redirect to eliminate the wrong-path
+    instruction.
+  \end{itemize}
+\item
+  Trap/exception handling not yet implemented (beyond
+  \texttt{illegal\ instruction}).
+\item
+  Register file:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    32 registers x 32 bit (x0 hardwired to 0)
+  \item
+    2 read ports, 1 write port.
+  \end{itemize}
+\item
+  Reset vector hardcoded to \texttt{32\textquotesingle{}h0000\_0000} in
+  the IF stage.
+\end{itemize}
+
+\hypertarget{5-functional-units}{%
+\subsection{5. Functional units}\label{5-functional-units}}
+
+\begin{itemize}
+\tightlist
+\item
+  Integer ALU:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    add/sub
+  \item
+    logic operations (and/or/xor)
+  \item
+    shift (sll/srl/sra)
+  \item
+    signed/unsigned comparisons (slt/sltu)
+  \end{itemize}
+\item
+  Branch/jump implemented in the current RTL:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    beq, bne, blt, bge, bltu, bgeu
+  \item
+    jal, jalr
+  \item
+    auipc (PC-relative writeback)
+  \end{itemize}
+\item
+  Nominal load/store decode and datapath present in the current RTL:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    lb, lh, lw, lbu, lhu
+  \item
+    sb, sh, sw
+  \end{itemize}
+\item
+  End-to-end correctness of data accesses is subject to the D-cache
+  limitations listed in 6.2 and 10.1.
+\item
+  Ecalls/ebreak/CSR/trap: not implemented in the current RTL.
+\end{itemize}
+
+\hypertarget{51-assembly-instructions-and-current-rtl-status}{%
+\subsubsection{5.1 Assembly instructions and current RTL
+status}\label{51-assembly-instructions-and-current-rtl-status}}
+
+Actual implementation status in the current RTL:
+
+\begin{itemize}
+\tightlist
+\item
+  Implemented: \texttt{add}, \texttt{sub}, \texttt{sll}, \texttt{slt},
+  \texttt{sltu}, \texttt{xor}, \texttt{srl}, \texttt{sra}, \texttt{or},
+  \texttt{and}, \texttt{addi}, \texttt{slti}, \texttt{sltiu},
+  \texttt{xori}, \texttt{ori}, \texttt{andi}, \texttt{slli},
+  \texttt{srli}, \texttt{srai}, \texttt{lui}, \texttt{auipc},
+  \texttt{jal}, \texttt{jalr}, \texttt{beq}, \texttt{bne}, \texttt{blt},
+  \texttt{bge}, \texttt{bltu}, \texttt{bgeu}, \texttt{lb}, \texttt{lh},
+  \texttt{lw}, \texttt{lbu}, \texttt{lhu}, \texttt{sb}, \texttt{sh},
+  \texttt{sw}.
+\item
+  Not yet implemented: \texttt{ecall}, \texttt{ebreak}, CSR
+  (\texttt{csrrw/csrrs/csrrc/csrrwi/csrrsi/csrrci}), \texttt{fence},
+  \texttt{fence.i}, and other non-base-RV32I extensions of the project.
+\end{itemize}
+
+\hypertarget{register-register-arithmetic-and-logic-r-type}{%
+\paragraph{Register-register arithmetic and logic
+(R-type)}\label{register-register-arithmetic-and-logic-r-type}}
+
+\begin{longtable}[]{@{}llllll@{}}
+\toprule
+Instruction & Description & opcode & funct3 & funct7 & Bitfield
+positions\tabularnewline
+\midrule
+\endhead
+\texttt{add\ rd,\ rs1,\ rs2} & Adds \texttt{rs1\ +\ rs2} and writes the
+result to \texttt{rd}. & \texttt{0110011} & \texttt{000} &
+\texttt{0000000} &
+\texttt{funct7{[}31:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{sub\ rd,\ rs1,\ rs2} & Subtracts \texttt{rs2} from \texttt{rs1}
+and writes the result to \texttt{rd}. & \texttt{0110011} & \texttt{000}
+& \texttt{0100000} &
+\texttt{funct7{[}31:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{sll\ rd,\ rs1,\ rs2} & Logical left shift of \texttt{rs1} by
+\texttt{rs2{[}4:0{]}} bits. & \texttt{0110011} & \texttt{001} &
+\texttt{0000000} &
+\texttt{funct7{[}31:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{slt\ rd,\ rs1,\ rs2} & Writes \texttt{1} to \texttt{rd} if
+\texttt{rs1\ \textless{}\ rs2} signed, else \texttt{0}. &
+\texttt{0110011} & \texttt{010} & \texttt{0000000} &
+\texttt{funct7{[}31:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{sltu\ rd,\ rs1,\ rs2} & Writes \texttt{1} to \texttt{rd} if
+\texttt{rs1\ \textless{}\ rs2} unsigned, else \texttt{0}. &
+\texttt{0110011} & \texttt{011} & \texttt{0000000} &
+\texttt{funct7{[}31:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{xor\ rd,\ rs1,\ rs2} & Bitwise XOR between \texttt{rs1} and
+\texttt{rs2}. & \texttt{0110011} & \texttt{100} & \texttt{0000000} &
+\texttt{funct7{[}31:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{srl\ rd,\ rs1,\ rs2} & Logical right shift of \texttt{rs1} by
+\texttt{rs2{[}4:0{]}} bits. & \texttt{0110011} & \texttt{101} &
+\texttt{0000000} &
+\texttt{funct7{[}31:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{sra\ rd,\ rs1,\ rs2} & Arithmetic right shift of \texttt{rs1} by
+\texttt{rs2{[}4:0{]}} bits. & \texttt{0110011} & \texttt{101} &
+\texttt{0100000} &
+\texttt{funct7{[}31:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{or\ rd,\ rs1,\ rs2} & Bitwise OR between \texttt{rs1} and
+\texttt{rs2}. & \texttt{0110011} & \texttt{110} & \texttt{0000000} &
+\texttt{funct7{[}31:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{and\ rd,\ rs1,\ rs2} & Bitwise AND between \texttt{rs1} and
+\texttt{rs2}. & \texttt{0110011} & \texttt{111} & \texttt{0000000} &
+\texttt{funct7{[}31:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\hypertarget{immediate-arithmetic-and-logic-i-type}{%
+\paragraph{Immediate arithmetic and logic
+(I-type)}\label{immediate-arithmetic-and-logic-i-type}}
+
+\begin{longtable}[]{@{}llllll@{}}
+\toprule
+Instruction & Description & opcode & funct3 & funct7 / funct12 &
+Bitfield positions\tabularnewline
+\midrule
+\endhead
+\texttt{addi\ rd,\ rs1,\ imm} & Adds \texttt{rs1\ +\ imm} sign-extended.
+& \texttt{0010011} & \texttt{000} & n/a &
+\texttt{imm{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{slti\ rd,\ rs1,\ imm} & Writes \texttt{1} to \texttt{rd} if
+\texttt{rs1\ \textless{}\ imm} signed, else \texttt{0}. &
+\texttt{0010011} & \texttt{010} & n/a &
+\texttt{imm{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{sltiu\ rd,\ rs1,\ imm} & Writes \texttt{1} to \texttt{rd} if
+\texttt{rs1\ \textless{}\ imm} unsigned, else \texttt{0}. &
+\texttt{0010011} & \texttt{011} & n/a &
+\texttt{imm{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{xori\ rd,\ rs1,\ imm} & Bitwise XOR between \texttt{rs1} and
+\texttt{imm}. & \texttt{0010011} & \texttt{100} & n/a &
+\texttt{imm{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{ori\ rd,\ rs1,\ imm} & Bitwise OR between \texttt{rs1} and
+\texttt{imm}. & \texttt{0010011} & \texttt{110} & n/a &
+\texttt{imm{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{andi\ rd,\ rs1,\ imm} & Bitwise AND between \texttt{rs1} and
+\texttt{imm}. & \texttt{0010011} & \texttt{111} & n/a &
+\texttt{imm{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{slli\ rd,\ rs1,\ shamt} & Logical left shift of \texttt{rs1} by
+\texttt{shamt} bits. & \texttt{0010011} & \texttt{001} &
+\texttt{funct7=0000000} &
+\texttt{funct7{[}31:25{]},\ shamt{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{srli\ rd,\ rs1,\ shamt} & Logical right shift of \texttt{rs1} by
+\texttt{shamt} bits. & \texttt{0010011} & \texttt{101} &
+\texttt{funct7=0000000} &
+\texttt{funct7{[}31:25{]},\ shamt{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{srai\ rd,\ rs1,\ shamt} & Arithmetic right shift of \texttt{rs1}
+by \texttt{shamt} bits. & \texttt{0010011} & \texttt{101} &
+\texttt{funct7=0100000} &
+\texttt{funct7{[}31:25{]},\ shamt{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\hypertarget{upper-immediate-and-pc-relative}{%
+\paragraph{Upper immediate and
+PC-relative}\label{upper-immediate-and-pc-relative}}
+
+\begin{longtable}[]{@{}llllll@{}}
+\toprule
+Instruction & Description & opcode & funct3 & funct7 / note & Bitfield
+positions\tabularnewline
+\midrule
+\endhead
+\texttt{lui\ rd,\ imm20} & Loads \texttt{imm20} into the high bits of
+\texttt{rd} (low bits zeroed). & \texttt{0110111} & n/a & U-type &
+\texttt{imm20{[}31:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{auipc\ rd,\ imm20} & Writes the value
+\texttt{PC\ +\ (imm20\ \textless{}\textless{}\ 12)} to \texttt{rd}. &
+\texttt{0010111} & n/a & U-type &
+\texttt{imm20{[}31:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\hypertarget{jumps-and-branches}{%
+\paragraph{Jumps and branches}\label{jumps-and-branches}}
+
+\begin{longtable}[]{@{}llllll@{}}
+\toprule
+Instruction & Description & opcode & funct3 & funct7 / note & Bitfield
+positions\tabularnewline
+\midrule
+\endhead
+\texttt{jal\ rd,\ offset} & PC-relative jump and return address saved in
+\texttt{rd}. & \texttt{1101111} & n/a & J-type &
+\texttt{imm{[}20{]}={[}31{]},\ imm{[}10:1{]}={[}30:21{]},\ imm{[}11{]}={[}20{]},\ imm{[}19:12{]}={[}19:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{jalr\ rd,\ rs1,\ imm} & Indirect jump to \texttt{rs1\ +\ imm}
+with return address in \texttt{rd}. & \texttt{1100111} & \texttt{000} &
+I-type &
+\texttt{imm{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{beq\ rs1,\ rs2,\ offset} & Branch if \texttt{rs1\ ==\ rs2}. &
+\texttt{1100011} & \texttt{000} & B-type &
+\texttt{imm{[}12{]}={[}31{]},\ imm{[}10:5{]}={[}30:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ imm{[}4:1{]}={[}11:8{]},\ imm{[}11{]}={[}7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{bne\ rs1,\ rs2,\ offset} & Branch if \texttt{rs1\ !=\ rs2}. &
+\texttt{1100011} & \texttt{001} & B-type &
+\texttt{imm{[}12{]}={[}31{]},\ imm{[}10:5{]}={[}30:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ imm{[}4:1{]}={[}11:8{]},\ imm{[}11{]}={[}7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{blt\ rs1,\ rs2,\ offset} & Branch if
+\texttt{rs1\ \textless{}\ rs2} signed. & \texttt{1100011} & \texttt{100}
+& B-type &
+\texttt{imm{[}12{]}={[}31{]},\ imm{[}10:5{]}={[}30:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ imm{[}4:1{]}={[}11:8{]},\ imm{[}11{]}={[}7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{bge\ rs1,\ rs2,\ offset} & Branch if
+\texttt{rs1\ \textgreater{}=\ rs2} signed. & \texttt{1100011} &
+\texttt{101} & B-type &
+\texttt{imm{[}12{]}={[}31{]},\ imm{[}10:5{]}={[}30:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ imm{[}4:1{]}={[}11:8{]},\ imm{[}11{]}={[}7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{bltu\ rs1,\ rs2,\ offset} & Branch if
+\texttt{rs1\ \textless{}\ rs2} unsigned. & \texttt{1100011} &
+\texttt{110} & B-type &
+\texttt{imm{[}12{]}={[}31{]},\ imm{[}10:5{]}={[}30:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ imm{[}4:1{]}={[}11:8{]},\ imm{[}11{]}={[}7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{bgeu\ rs1,\ rs2,\ offset} & Branch if
+\texttt{rs1\ \textgreater{}=\ rs2} unsigned. & \texttt{1100011} &
+\texttt{111} & B-type &
+\texttt{imm{[}12{]}={[}31{]},\ imm{[}10:5{]}={[}30:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ imm{[}4:1{]}={[}11:8{]},\ imm{[}11{]}={[}7{]},\ opcode{[}6:0{]}}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\hypertarget{memory-accesses}{%
+\paragraph{Memory accesses}\label{memory-accesses}}
+
+\begin{longtable}[]{@{}llllll@{}}
+\toprule
+Instruction & Description & opcode & funct3 & funct7 / note & Bitfield
+positions\tabularnewline
+\midrule
+\endhead
+\texttt{lb\ rd,\ imm(rs1)} & Loads 8 bits from memory with
+sign-extension. & \texttt{0000011} & \texttt{000} & I-type &
+\texttt{imm{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{lh\ rd,\ imm(rs1)} & Loads 16 bits from memory with
+sign-extension. & \texttt{0000011} & \texttt{001} & I-type &
+\texttt{imm{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{lw\ rd,\ imm(rs1)} & Loads 32 bits from memory. &
+\texttt{0000011} & \texttt{010} & I-type &
+\texttt{imm{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{lbu\ rd,\ imm(rs1)} & Loads 8 bits from memory with
+zero-extension. & \texttt{0000011} & \texttt{100} & I-type &
+\texttt{imm{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{lhu\ rd,\ imm(rs1)} & Loads 16 bits from memory with
+zero-extension. & \texttt{0000011} & \texttt{101} & I-type &
+\texttt{imm{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{sb\ rs2,\ imm(rs1)} & Stores 8 bits (\texttt{rs2{[}7:0{]}}) to
+memory. & \texttt{0100011} & \texttt{000} & S-type &
+\texttt{imm{[}11:5{]}={[}31:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ imm{[}4:0{]}={[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{sh\ rs2,\ imm(rs1)} & Stores 16 bits (\texttt{rs2{[}15:0{]}}) to
+memory. & \texttt{0100011} & \texttt{001} & S-type &
+\texttt{imm{[}11:5{]}={[}31:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ imm{[}4:0{]}={[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{sw\ rs2,\ imm(rs1)} & Stores 32 bits of \texttt{rs2} to memory.
+& \texttt{0100011} & \texttt{010} & S-type &
+\texttt{imm{[}11:5{]}={[}31:25{]},\ rs2{[}24:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ imm{[}4:0{]}={[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\hypertarget{system-csr-and-fence}{%
+\paragraph{System, CSR, and fence}\label{system-csr-and-fence}}
+
+\begin{longtable}[]{@{}llllll@{}}
+\toprule
+Instruction & Description & opcode & funct3 & funct12 / funct7 &
+Bitfield positions\tabularnewline
+\midrule
+\endhead
+\texttt{ecall} & Generates an environment call trap in M-mode. &
+\texttt{1110011} & \texttt{000} & \texttt{000000000000} &
+\texttt{funct12{[}31:20{]},\ rs1{[}19:15{]}=00000,\ funct3{[}14:12{]},\ rd{[}11:7{]}=00000,\ opcode{[}6:0{]}}\tabularnewline
+\texttt{ebreak} & Generates a breakpoint trap in M-mode. &
+\texttt{1110011} & \texttt{000} & \texttt{000000000001} &
+\texttt{funct12{[}31:20{]},\ rs1{[}19:15{]}=00000,\ funct3{[}14:12{]},\ rd{[}11:7{]}=00000,\ opcode{[}6:0{]}}\tabularnewline
+\texttt{csrrw\ rd,\ csr,\ rs1} & Writes \texttt{rs1} to CSR and returns
+the old value in \texttt{rd}. & \texttt{1110011} & \texttt{001} &
+CSR-type &
+\texttt{csr{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{csrrs\ rd,\ csr,\ rs1} & Sets CSR bits with \texttt{rs1},
+returns the old value in \texttt{rd}. & \texttt{1110011} & \texttt{010}
+& CSR-type &
+\texttt{csr{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{csrrc\ rd,\ csr,\ rs1} & Clears CSR bits with \texttt{rs1},
+returns the old value in \texttt{rd}. & \texttt{1110011} & \texttt{011}
+& CSR-type &
+\texttt{csr{[}31:20{]},\ rs1{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{csrrwi\ rd,\ csr,\ zimm} & Writes \texttt{zimm} to CSR and
+returns the old value in \texttt{rd}. & \texttt{1110011} & \texttt{101}
+& CSR-type &
+\texttt{csr{[}31:20{]},\ zimm{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{csrrsi\ rd,\ csr,\ zimm} & Sets CSR bits with \texttt{zimm},
+returns the old value in \texttt{rd}. & \texttt{1110011} & \texttt{110}
+& CSR-type &
+\texttt{csr{[}31:20{]},\ zimm{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{csrrci\ rd,\ csr,\ zimm} & Clears CSR bits with \texttt{zimm},
+returns the old value in \texttt{rd}. & \texttt{1110011} & \texttt{111}
+& CSR-type &
+\texttt{csr{[}31:20{]},\ zimm{[}19:15{]},\ funct3{[}14:12{]},\ rd{[}11:7{]},\ opcode{[}6:0{]}}\tabularnewline
+\texttt{fence} & Memory/ordering barrier (in v1 may be treated as a
+functional no-op). & \texttt{0001111} & \texttt{000} & pred/succ in
+immediate fields &
+\texttt{fm{[}31:28{]},\ pred{[}27:24{]},\ succ{[}23:20{]},\ rs1{[}19:15{]}=00000,\ funct3{[}14:12{]},\ rd{[}11:7{]}=00000,\ opcode{[}6:0{]}}\tabularnewline
+\texttt{fence.i} & Instruction fetch barrier (in v1 planned as not
+implemented). & \texttt{0001111} & \texttt{001} & immediate=0 &
+\texttt{imm{[}31:20{]}=000000000000,\ rs1{[}19:15{]}=00000,\ funct3{[}14:12{]},\ rd{[}11:7{]}=00000,\ opcode{[}6:0{]}}\tabularnewline
+\bottomrule
+\end{longtable}
+
+v1 implementation notes:
+
+\begin{itemize}
+\tightlist
+\item
+  Every instruction not implemented in the current RTL generates
+  \texttt{illegal\ instruction}.
+\item
+  Assembler pseudo-instructions (e.g., li, mv, nop, j, ret) are accepted
+  by the toolchain but expanded into supported base RV32I instructions.
+\end{itemize}
+
+\hypertarget{52-risc-v-instruction-catalog-reference-for-isa-extensions}{%
+\subsubsection{5.2 RISC-V instruction catalog (reference for ISA
+extensions)}\label{52-risc-v-instruction-catalog-reference-for-isa-extensions}}
+
+This chapter lists the most common standard instructions to use as an
+architectural reference. For the v1 project we implement only the subset
+declared in 5.1.
+
+\hypertarget{rv32i-base-integer-isa}{%
+\paragraph{RV32I (Base Integer ISA)}\label{rv32i-base-integer-isa}}
+
+\begin{itemize}
+\tightlist
+\item
+  lui, auipc
+\item
+  jal, jalr
+\item
+  beq, bne, blt, bge, bltu, bgeu
+\item
+  lb, lh, lw, lbu, lhu
+\item
+  sb, sh, sw
+\item
+  addi, slti, sltiu, xori, ori, andi, slli, srli, srai
+\item
+  add, sub, sll, slt, sltu, xor, srl, sra, or, and
+\item
+  fence, fence.i
+\item
+  ecall, ebreak
+\item
+  csrrw, csrrs, csrrc, csrrwi, csrrsi, csrrci
+\end{itemize}
+
+\hypertarget{rv64irv128i-not-a-v1-target-reference}{%
+\paragraph{RV64I/RV128I (not a v1 target,
+reference)}\label{rv64irv128i-not-a-v1-target-reference}}
+
+\begin{itemize}
+\tightlist
+\item
+  addiw, slliw, srliw, sraiw
+\item
+  addw, subw, sllw, srlw, sraw
+\item
+  ld, lwu, sd
+\end{itemize}
+
+\hypertarget{m-extension-integer-multiplydivide}{%
+\paragraph{M Extension (Integer
+Multiply/Divide)}\label{m-extension-integer-multiplydivide}}
+
+\begin{itemize}
+\tightlist
+\item
+  mul, mulh, mulhsu, mulhu
+\item
+  div, divu, rem, remu
+\item
+  Additional RV64: mulw, divw, divuw, remw, remuw
+\end{itemize}
+
+\hypertarget{a-extension-atomic}{%
+\paragraph{A Extension (Atomic)}\label{a-extension-atomic}}
+
+\begin{itemize}
+\tightlist
+\item
+  lr.w, sc.w
+\item
+  amoswap.w, amoadd.w, amoxor.w, amoand.w, amoor.w
+\item
+  amomin.w, amomax.w, amominu.w, amomaxu.w
+\item
+  Additional RV64: lr.d, sc.d, amoswap.d, amoadd.d, amoxor.d, amoand.d,
+  amoor.d, amomin.d, amomax.d, amominu.d, amomaxu.d
+\end{itemize}
+
+\hypertarget{f-extension-single-precision-floating-point}{%
+\paragraph{F Extension (Single-Precision Floating
+Point)}\label{f-extension-single-precision-floating-point}}
+
+\begin{itemize}
+\tightlist
+\item
+  flw, fsw
+\item
+  fmadd.s, fmsub.s, fnmsub.s, fnmadd.s
+\item
+  fadd.s, fsub.s, fmul.s, fdiv.s, fsqrt.s
+\item
+  fsgnj.s, fsgnjn.s, fsgnjx.s
+\item
+  fmin.s, fmax.s
+\item
+  fcvt.w.s, fcvt.wu.s
+\item
+  fmv.x.w
+\item
+  feq.s, flt.s, fle.s
+\item
+  fclass.s
+\item
+  fcvt.s.w, fcvt.s.wu
+\item
+  fmv.w.x
+\item
+  Additional RV64: fcvt.l.s, fcvt.lu.s, fcvt.s.l, fcvt.s.lu
+\end{itemize}
+
+\hypertarget{d-extension-double-precision-floating-point}{%
+\paragraph{D Extension (Double-Precision Floating
+Point)}\label{d-extension-double-precision-floating-point}}
+
+\begin{itemize}
+\tightlist
+\item
+  fld, fsd
+\item
+  fmadd.d, fmsub.d, fnmsub.d, fnmadd.d
+\item
+  fadd.d, fsub.d, fmul.d, fdiv.d, fsqrt.d
+\item
+  fsgnj.d, fsgnjn.d, fsgnjx.d
+\item
+  fmin.d, fmax.d
+\item
+  fcvt.s.d, fcvt.d.s
+\item
+  feq.d, flt.d, fle.d
+\item
+  fclass.d
+\item
+  fcvt.w.d, fcvt.wu.d, fcvt.d.w, fcvt.d.wu
+\item
+  Additional RV64: fcvt.l.d, fcvt.lu.d, fcvt.d.l, fcvt.d.lu
+\item
+  fmv.x.d, fmv.d.x (RV64)
+\end{itemize}
+
+\hypertarget{c-extension-compressed}{%
+\paragraph{C Extension (Compressed)}\label{c-extension-compressed}}
+
+\begin{itemize}
+\tightlist
+\item
+  c.addi4spn
+\item
+  c.lw, c.sw
+\item
+  c.nop, c.addi
+\item
+  c.jal (RV32), c.addiw (RV64/128)
+\item
+  c.li, c.addi16sp, c.lui
+\item
+  c.srli, c.srai, c.andi
+\item
+  c.sub, c.xor, c.or, c.and
+\item
+  c.subw, c.addw (RV64/128)
+\item
+  c.j, c.beqz, c.bnez
+\item
+  c.slli
+\item
+  c.lwsp
+\item
+  c.jr, c.mv, c.ebreak, c.jalr, c.add
+\item
+  c.swsp
+\item
+  Additional RV64/128: c.ld, c.sd, c.ldsp, c.sdsp
+\end{itemize}
+
+\hypertarget{zicsr-csr-instructions}{%
+\paragraph{Zicsr (CSR Instructions)}\label{zicsr-csr-instructions}}
+
+\begin{itemize}
+\tightlist
+\item
+  csrrw, csrrs, csrrc, csrrwi, csrrsi, csrrci
+\end{itemize}
+
+\hypertarget{zifencei-instruction-fetch-fence}{%
+\paragraph{Zifencei (Instruction-Fetch
+Fence)}\label{zifencei-instruction-fetch-fence}}
+
+\begin{itemize}
+\tightlist
+\item
+  fence.i
+\end{itemize}
+
+\hypertarget{privileged-instructions-privileged-isa-depend-on-the-supported-mode}{%
+\paragraph{Privileged instructions (Privileged ISA, depend on the
+supported
+mode)}\label{privileged-instructions-privileged-isa-depend-on-the-supported-mode}}
+
+\begin{itemize}
+\tightlist
+\item
+  mret
+\item
+  sret
+\item
+  wfi
+\item
+  sfence.vma
+\item
+  hfence.vvma, hfence.gvma (hypervisor)
+\end{itemize}
+
+Notes:
+
+\begin{itemize}
+\tightlist
+\item
+  The set actually implemented by the core is the one declared in
+  section 5.1.
+\item
+  This catalog serves as a reference for future evolutions (RV32IM,
+  RV32IMC, RV32IMAFD, etc.).
+\item
+  In case of doubts about variants/edge cases, refer to the official
+  RISC-V ISA specification.
+\end{itemize}
+
+\hypertarget{6-memory-subsystem-and-address-map-current-rtl-status}{%
+\subsection{6. Memory subsystem and address map (current RTL
+status)}\label{6-memory-subsystem-and-address-map-current-rtl-status}}
+
+\hypertarget{61-instruction-cache}{%
+\subsubsection{6.1 Instruction cache}\label{61-instruction-cache}}
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{riscv\_if\_stage} instantiates \texttt{riscv\_icache};
+  \texttt{riscv\_imem} is not used in the current integrated datapath.
+\item
+  Direct-mapped, read-only cache, with default parameters:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    128 lines.
+  \item
+    8 words of 32 bits per line (32 bytes).
+  \item
+    total capacity 4 KiB.
+  \end{itemize}
+\item
+  Each line has a tag and a valid bit; all valid bits are cleared on
+  reset.
+\item
+  Hit with combinational response; during a miss, the PC and the IF/ID
+  register remain frozen until the refill completes.
+\item
+  Full-line refill via a single 256-bit transaction on the I-side
+  master.
+\item
+  No software invalidation, no coherence with the D-cache, and no
+  \texttt{fence.i} support.
+\end{itemize}
+
+\hypertarget{62-data-cache}{%
+\subsubsection{6.2 Data cache}\label{62-data-cache}}
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{riscv\_wb\_stage} instantiates \texttt{riscv\_dcache\_ctrl},
+  which wraps \texttt{set\_associative\_cache}.
+\item
+  Nominal default geometry:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    8 sets x 4 ways.
+  \item
+    internal block of one 32-bit word.
+  \item
+    total data capacity 128 bytes.
+  \item
+    index \texttt{addr{[}4:2{]}}, tag \texttt{addr{[}31:5{]}}; way 3
+    used as the eviction candidate.
+  \end{itemize}
+\item
+  Stores are write-back: each way carries a dirty bit, and a dirty
+  eviction generates a write to RAM.
+\item
+  \texttt{lb/lh/lbu/lhu} select byte/halfword and apply sign/zero
+  extension in the controller.
+\item
+  \texttt{sb/sh} use a read-modify-write sequence; \texttt{sw} writes
+  the word directly.
+\item
+  A load miss returns the word read directly from AHB but does not
+  install it in the cache (\texttt{refill\_i} is tied to zero). Repeated
+  loads can therefore keep missing.
+\item
+  Data accesses are multi-cycle. The FSM \texttt{ST\_IDLE},
+  \texttt{ST\_LOAD}, \texttt{ST\_RMW\_READ}, \texttt{ST\_STORE},
+  \texttt{ST\_DONE\_A}, \texttt{ST\_DONE\_B} generates
+  \texttt{mem\_stall} to freeze IF and the ID/EX output registers.
+\end{itemize}
+
+D-cache limitations found in the current RTL:
+
+\begin{itemize}
+\tightlist
+\item
+  There are no valid bits in the ways. After reset the tags are zero,
+  and an access with a zero tag can produce a false hit with zero data.
+\item
+  In \texttt{ST\_STORE}, \texttt{dc\_en} and \texttt{dc\_we} remain
+  asserted for multiple cycles; the shift-chain structure of the ways
+  can repeatedly insert the same entry and corrupt the associative
+  state.
+\item
+  Stall is asserted starting from the state following acceptance in
+  \texttt{ST\_IDLE}. ID/EX can advance on the first edge before the
+  freeze takes effect, while the load destination and qualifier are not
+  latched in the controller; load write-back is therefore not guaranteed
+  end-to-end.
+\item
+  No alignment checks are present. A halfword at offset 1 or 3 is
+  selected based only on bit \texttt{addr{[}1{]}}; a word ignores
+  \texttt{addr{[}1:0{]}}.
+\item
+  The replacement policy declared in the module is not complete; the
+  implementation uses a shift chain with way 3 as the eviction
+  candidate.
+\end{itemize}
+
+\hypertarget{63-unified-bring-up-ram}{%
+\subsubsection{6.3 Unified bring-up RAM}\label{63-unified-bring-up-ram}}
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{riscv\_top} instantiates \texttt{riscv\_ahb\_ram\_slave} as
+  the shared backing store for the I-cache and D-cache.
+\item
+  32-bit byte address space; sparse storage indexed per 256-bit line.
+\item
+  Uninitialized locations read as zero.
+\item
+  Optional HEX file preload via \texttt{IMEM\_HEX\_FILE}, starting at
+  \texttt{32\textquotesingle{}h0000\_0000}, for \texttt{IMEM\_WORDS}
+  words (default 1024).
+\item
+  Read and write have a registered address phase; the model keeps
+  \texttt{HREADY=1} and \texttt{HRESP=OKAY}.
+\item
+  A D-side write updates only the selected 32-bit lane within the line.
+\item
+  The sparse associative array, the \texttt{exists} method, and the
+  preload \texttt{initial} block make this a simulation model, not a
+  synthesizable SRAM for ASIC.
+\end{itemize}
+
+\hypertarget{64-alternativelegacy-memory-modules}{%
+\subsubsection{6.4 Alternative/legacy memory
+modules}\label{64-alternativelegacy-memory-modules}}
+
+The following modules are present in the RTL folder but are not
+instantiated by \texttt{riscv\_top}:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{riscv\_imem}, \texttt{riscv\_dmem}: dedicated memories from
+  the previous integration.
+\item
+  \texttt{riscv\_ahb\_imem\_slave}, \texttt{riscv\_ahb\_dmem\_slave}:
+  bus wrappers for the dedicated memories.
+\item
+  \texttt{memory\_wrapper}, \texttt{ram}, \texttt{cdc\_sync\_2ff}:
+  alternative dual-clock cache/RAM path with CDC handshake.
+\end{itemize}
+
+These modules do not describe the current integrated datapath. They also
+have their own limitations: \texttt{riscv\_dmem} effectively requires
+word-aligned addresses, \texttt{riscv\_ahb\_dmem\_slave} keeps the
+internal request always active, and \texttt{ram} performs no range check
+before indexing.
+
+\hypertarget{7-bus-interface-current-rtl-status}{%
+\subsection{7. Bus interface (current RTL
+status)}\label{7-bus-interface-current-rtl-status}}
+
+The \texttt{riscv} module exposes two reduced AHB-Lite master ports,
+absorbed internally by \texttt{riscv\_top}:
+
+\begin{itemize}
+\tightlist
+\item
+  I-side: \texttt{HADDR}, \texttt{HTRANS}, \texttt{HWRITE=0},
+  \texttt{HSIZE}, \texttt{HRDATA}, \texttt{HREADY}, \texttt{HRESP}.
+\item
+  D-side: same signals, with \texttt{HWRITE} and \texttt{HWDATA} for
+  write-backs.
+\item
+  Line-wide data payload, 256 bits with default parameters.
+\item
+  Only \texttt{IDLE}/\texttt{NONSEQ} transfers, no bursts,
+  \texttt{HPROT}, lock, or multiple outstanding transactions.
+\item
+  Fixed D-side over I-side priority arbitration in the top. Continuous
+  D-side traffic can starve fetch.
+\item
+  \texttt{HRESP} reaches the caches but is not handled; no timeouts or
+  traps for bus errors are present.
+\end{itemize}
+
+The interface is a custom subset compatible with the current internal
+integration, not a verified general AHB-Lite implementation. In
+particular, the RAM model samples \texttt{HWDATA} together with the
+address phase; internal masters and slaves use the same convention, but
+it does not represent the normal AHB-Lite address/data phase separation.
+
+At the top level, \texttt{riscv\_top} exposes only \texttt{clk\_i},
+\texttt{rst\_ni}, and \texttt{illegal\_instr\_o}; the bus ports are
+internal to the wrapper.
+
+\hypertarget{8-reset-clock-interrupt}{%
+\subsection{8. Reset, clock, interrupt}\label{8-reset-clock-interrupt}}
+
+\begin{itemize}
+\tightlist
+\item
+  Single \texttt{clk\_i} clock in the active integration.
+\item
+  Asynchronous active-low reset used in pipeline, cache, and bus
+  registers
+  (\texttt{always\_ff\ @(posedge\ clk\_i\ or\ negedge\ rst\_ni)}).
+\item
+  Reset PC hardcoded to \texttt{32\textquotesingle{}h0000\_0000}; no
+  reset vector parameter exists.
+\item
+  Interrupts not implemented.
+\item
+  \texttt{memory\_wrapper} contains a dual-clock path and 2-FF
+  synchronizers, but it is not instantiated by the current top. The
+  synchronizer is suitable for the single-bit handshake signals used in
+  the wrapper, and does not guarantee atomicity for generic multi-bit
+  buses.
+\end{itemize}
+
+\hypertarget{9-csr-traps-and-errors}{%
+\subsection{9. CSR, traps, and errors}\label{9-csr-traps-and-errors}}
+
+\begin{itemize}
+\tightlist
+\item
+  CSRs are not implemented; there is no CSR file.
+\item
+  \texttt{ecall}, \texttt{ebreak}, CSR, \texttt{fence}, and
+  \texttt{fence.i} are decoded as illegal instructions.
+\item
+  An unrecognized instruction asserts \texttt{illegal\_instr\_o} and
+  inhibits write-back, but does not cause a redirect to a trap handler.
+\item
+  No traps are implemented for misaligned accesses, access faults,
+  instruction-address-misaligned, or bus errors.
+\item
+  \texttt{jalr} forces bit 0 of the target to zero as required by RV32I;
+  the resulting target's 32-bit alignment is not checked.
+\end{itemize}
+
+\hypertarget{10-hazard-management-and-pipeline-control}{%
+\subsection{10. Hazard management and pipeline
+control}\label{10-hazard-management-and-pipeline-control}}
+
+\begin{itemize}
+\tightlist
+\item
+  Selective data forwarding:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    EX -\textgreater{} EX from the registered ID/EX result, with
+    priority over the older bypass.
+  \item
+    WB -\textgreater{} EX from the final data written to the register
+    file.
+  \item
+    match on \texttt{rs1}/\texttt{rs2}, destination different from
+    \texttt{x0}, and valid write enable.
+  \end{itemize}
+\item
+  Load-use interlock present: inserts a bubble when \texttt{load\_rd}
+  matches \texttt{rs1} or \texttt{rs2} of the instruction in IF/ID.
+\item
+  The load-use comparison does not qualify the actual use of the source
+  fields based on the opcode and can produce unnecessary conservative
+  stalls.
+\item
+  There is no direct forwarding of load data from the D-cache to EX.
+\item
+  \texttt{mem\_stall} freezes PC/IF-ID and holds the ID/EX output
+  registers during a multi-cycle D-cache access.
+\item
+  The D-cache acceptance window described in 6.2 remains an open issue:
+  the existing load-use interlock does not resolve the initial loss of
+  load metadata.
+\item
+  Branches and jumps are resolved in ID/EX without prediction. A taken
+  redirect updates the PC and replaces the wrong-path instruction in
+  IF/ID with a NOP, introducing a bubble.
+\item
+  An I-cache miss autonomously keeps PC and IF/ID frozen until
+  \texttt{rvalid} goes high again.
+\end{itemize}
+
+\hypertarget{101-functional-compliance-status}{%
+\subsubsection{10.1 Functional compliance
+status}\label{101-functional-compliance-status}}
+
+\begin{itemize}
+\tightlist
+\item
+  ALU, immediates, branch/jump, and register file appear implemented
+  consistently with the subset in section 5.1 based on static analysis.
+\item
+  Load/store decode and byte/halfword handling are present, but the
+  D-cache path requires fixes and regression testing before memory
+  accesses can be declared compliant.
+\item
+  Unimplemented instructions generate a flag, not an architectural trap.
+\end{itemize}
+
+\hypertarget{11-initial-performance-target-to-be-refined}{%
+\subsection{11. Initial performance target (to be
+refined)}\label{11-initial-performance-target-to-be-refined}}
+
+\begin{itemize}
+\tightlist
+\item
+  Initial frequency target for the first synthesis runs: 200 MHz.
+\item
+  Preliminary CPI target on simple code with cache hits: approximately
+  1.2 - 1.8.
+\item
+  Taken branch: at least one bubble per flush, no prediction.
+\item
+  Load/store: variable latency and pipeline stall; \texttt{sb/sh} add
+  the read-modify-write sequence.
+\item
+  I-cache misses and D-cache traffic share a single slave; D-side
+  priority can increase fetch latency.
+\item
+  Targets must be recalibrated after the D-cache fix and with
+  Genus/Innovus reports on a synthesizable memory.
+\end{itemize}
+
+\hypertarget{12-explicit-exclusions-from-v1}{%
+\subsection{12. Explicit exclusions from
+v1}\label{12-explicit-exclusions-from-v1}}
+
+\begin{itemize}
+\tightlist
+\item
+  MMU and virtual memory.
+\item
+  Privilege state and modes beyond the nominal machine-level datapath.
+\item
+  Trap handler, interrupts, and CSRs.
+\item
+  ISA extensions A/F/D/C/M.
+\item
+  Branch prediction, out-of-order execution, and multicore.
+\item
+  I-cache/D-cache coherence and self-modifying code support.
+\item
+  Complete debug hardware.
+\item
+  Full AHB-Lite bus interface and synthesizable integrated RAM.
+\end{itemize}
+
+\hypertarget{13-minimum-verification-requirements}{%
+\subsection{13. Minimum verification
+requirements}\label{13-minimum-verification-requirements}}
+
+\begin{itemize}
+\tightlist
+\item
+  Directed ISA tests for every instruction in section 5.1, including
+  signed/unsigned and shift boundary values.
+\item
+  Tests for EX -\textgreater{} EX and WB -\textgreater{} EX forwarding,
+  forwarding priority, and \texttt{x0} protection.
+\item
+  Load-use tests with instructions using one or both operands, and cases
+  that should not stall.
+\item
+  Taken/not-taken branch/jump tests, forward/backward targets,
+  wrong-path flush, and \texttt{jalr} bit 0.
+\item
+  I-cache tests for cold miss, hit, conflict miss, refill, wait state,
+  and valid bit reset.
+\item
+  D-cache tests for cold access with zero tag, hit/miss on every way,
+  dirty eviction, repeated loads, \texttt{sb/sh/sw}, sign extension, and
+  read-modify-write.
+\item
+  Assertions/checks on maintaining \texttt{load\_valid} and
+  \texttt{load\_rd} from request acceptance through write-back.
+\item
+  Simultaneous I-side/D-side starvation/arbitration tests and signal
+  stability during wait states.
+\item
+  Negative tests for illegal instruction, misalignment, and
+  \texttt{HRESP}, documenting current behavior until traps are
+  implemented.
+\item
+  RTL code coverage and functional coverage for ISA classes, hazards,
+  FSM states, hit/miss, eviction, and arbitration.
+\end{itemize}
+
+Note: the previous sequence based on dedicated IMEM/DMEM is not
+sufficient to validate the current cache/AHB top. End-to-end load/store
+compliance remains open until the issues in 6.2 are resolved.
+
+\hypertarget{14-deliverables-related-to-this-specification}{%
+\subsection{14. Deliverables related to this
+specification}\label{14-deliverables-related-to-this-specification}}
+
+\begin{itemize}
+\tightlist
+\item
+  IF, ID/EX, WB pipeline and ALU/register file modules.
+\item
+  Direct-mapped I-cache with I-side master.
+\item
+  D-cache controller and set-associative cache with write-back.
+\item
+  I/D arbitration and unified simulation AHB RAM in the
+  \texttt{riscv\_top} wrapper.
+\item
+  Legacy memory modules kept as alternative, inactive implementations.
+\item
+  Updated testbench and regression for cache, bus, stall, and
+  load/store.
+\item
+  Initial clock/reset/IO constraints for synthesis.
+\end{itemize}
+
+\hypertarget{15-rtl-implementation-status-complete-snapshot}{%
+\subsection{15. RTL implementation status (complete
+snapshot)}\label{15-rtl-implementation-status-complete-snapshot}}
+
+\hypertarget{151-active-datapath-and-control}{%
+\subsubsection{15.1 Active datapath and
+control}\label{151-active-datapath-and-control}}
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{riscv\_top.sv}: wrapper, I/D arbiter, and unified RAM.
+\item
+  \texttt{riscv.sv}: pipeline integration, forwarding, and interlock.
+\item
+  \texttt{riscv\_if\_stage.sv}: PC, IF/ID, flush, and I-cache interface.
+\item
+  \texttt{riscv\_id\_ex\_stage.sv}: RV32I decode, immediates, ALU
+  control, branch, and registers toward WB.
+\item
+  \texttt{riscv\_wb\_stage.sv}: write-back mux and D-cache integration.
+\item
+  \texttt{riscv\_regfile.sv}: 32 x 32 bit, two asynchronous reads, one
+  synchronous write.
+\item
+  \texttt{riscv\_alu\_addsub.sv}, \texttt{riscv\_alu\_shift.sv},
+  \texttt{riscv\_alu\_logic.sv}, \texttt{riscv\_alu\_compare.sv}:
+  dedicated combinational units.
+\end{itemize}
+
+\hypertarget{152-active-memory-subsystem}{%
+\subsubsection{15.2 Active memory
+subsystem}\label{152-active-memory-subsystem}}
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{riscv\_icache.sv}: direct-mapped I-cache and I-side refill.
+\item
+  \texttt{riscv\_dcache\_ctrl.sv}: data access control, width/sign, RMW,
+  and D-side master.
+\item
+  \texttt{set\_associative\_cache.sv}: set selection, miss/write-back
+  FSM, and RAM interface.
+\item
+  \texttt{cache\_set.sv}, \texttt{cache\_way.sv}: four-way storage in a
+  shift chain with dirty bit.
+\item
+  \texttt{riscv\_ahb\_ram\_slave.sv}: unified sparse simulation backing
+  store.
+\end{itemize}
+
+\hypertarget{153-alternative-modules-not-instantiated-by-the-top}{%
+\subsubsection{15.3 Alternative modules not instantiated by the
+top}\label{153-alternative-modules-not-instantiated-by-the-top}}
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{riscv\_imem.sv}, \texttt{riscv\_dmem.sv}.
+\item
+  \texttt{riscv\_ahb\_imem\_slave.sv},
+  \texttt{riscv\_ahb\_dmem\_slave.sv}.
+\item
+  \texttt{memory\_wrapper.sv}, \texttt{ram.sv},
+  \texttt{cdc\_sync\_2ff.sv}.
+\end{itemize}
+
+\hypertarget{154-parametrization-and-synthesis-constraints}{%
+\subsubsection{15.4 Parametrization and synthesis
+constraints}\label{154-parametrization-and-synthesis-constraints}}
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{LINE\_LENGHT} is defined as \texttt{2**LINE\_WORDS}; this
+  relationship coincides with 256 bits only for the default
+  \texttt{LINE\_WORDS=8}, but the general correct width would be
+  \texttt{LINE\_WORDS*32}.
+\item
+  \texttt{ICACHE\_LINE\_WORDS} and \texttt{LINE\_WORDS} are separate
+  parameters and must be kept consistent manually.
+\item
+  \texttt{set\_associative\_cache} extracts index and tag with fixed
+  slices for 8 sets and 32-bit blocks; the declared parametrization is
+  not fully general.
+\item
+  \texttt{cache\_set} uses an \texttt{assign\ \#1ns} delay, unsuitable
+  for a portable synthesizable datapath.
+\item
+  \texttt{riscv\_ahb\_ram\_slave} is a sparse behavioral model and must
+  be replaced with synthesizable RAM/ROM in the ASIC flow.
+\end{itemize}
+
+\hypertarget{16-open-issues-and-priorities-for-the-v1-freeze}{%
+\subsection{16. Open issues and priorities for the v1
+freeze}\label{16-open-issues-and-priorities-for-the-v1-freeze}}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  Fix the ID/EX-D-cache contract: assert stall in the acceptance cycle,
+  or latch all metadata, including \texttt{load\_valid} and
+  \texttt{load\_rd}.
+\item
+  Add valid bits to the D-cache and make way updates single pulses;
+  verify replacement and dirty eviction.
+\item
+  Define and implement the load refill policy, including possible read
+  allocation.
+\item
+  Define the behavior for misaligned accesses and add a trap or explicit
+  block.
+\item
+  Fix the line parametrization (\texttt{LINE\_WORDS*32}) and unify the
+  I-cache/system bus parameters.
+\item
+  Make the interface AHB-Lite compliant, or rename/document it as a
+  custom internal protocol; add \texttt{HRESP} handling.
+\item
+  Replace sparse RAM and RTL delays with synthesizable implementations
+  and define the ROM/SRAM/peripheral map.
+\item
+  Add cache/bus/load-store regression before declaring the RV32I subset
+  fully compliant.
+\item
+  Decide on including the M extension, interrupt/CSR/trap strategy, and
+  \texttt{fence.i} support.
+\item
+  Decide whether to remove legacy modules from the compile list or keep
+  them in a separate test configuration.
+\end{enumerate}
+
+\end{document}

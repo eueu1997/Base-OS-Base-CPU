@@ -1,0 +1,587 @@
+\PassOptionsToPackage{unicode=true}{hyperref} % options for packages loaded elsewhere
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[]{article}
+\usepackage{lmodern}
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\usepackage{fixltx2e} % provides \textsubscript
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provides euro and other symbols
+\else % if luatex or xelatex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Ligatures=TeX,Scale=MatchLowercase}
+\fi
+% use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+% use microtype if available
+\IfFileExists{microtype.sty}{%
+\usepackage[]{microtype}
+\UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\IfFileExists{parskip.sty}{%
+\usepackage{parskip}
+}{% else
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt plus 2pt minus 1pt}
+}
+\usepackage{hyperref}
+\hypersetup{
+            pdftitle={RISCV\_Core\_Datasheet},
+            pdfborder={0 0 0},
+            breaklinks=true}
+\urlstyle{same}  % don't use monospace font for urls
+\usepackage[margin=25mm]{geometry}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{0}
+% Redefines (sub)paragraphs to behave more like sections
+\ifx\paragraph\undefined\else
+\let\oldparagraph\paragraph
+\renewcommand{\paragraph}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+\let\oldsubparagraph\subparagraph
+\renewcommand{\subparagraph}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+
+% set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+
+
+\title{RISCV\_Core\_Datasheet}
+\date{}
+
+\begin{document}
+\maketitle
+
+\hypertarget{risc-v-core-datasheet-rtl-as-implemented}{%
+\section{RISC-V Core Datasheet (RTL
+As-Implemented)}\label{risc-v-core-datasheet-rtl-as-implemented}}
+
+\hypertarget{1-document-info}{%
+\subsection{1. Document Info}\label{1-document-info}}
+
+\begin{itemize}
+\tightlist
+\item
+  Project: RISC-V training core
+\item
+  RTL baseline: source/sv/rtl
+\item
+  Datasheet date: 2026-07-20
+\item
+  ISA target: RV32I subset (M-mode only, no CSR/trap implementation)
+\item
+  Endianness: little-endian
+\end{itemize}
+
+\hypertarget{2-executive-summary}{%
+\subsection{2. Executive Summary}\label{2-executive-summary}}
+
+This core is a simple in-order 32-bit RISC-V pipeline intended for
+bring-up and functional verification. The implementation is organized in
+three stages:
+
+\begin{itemize}
+\tightlist
+\item
+  IF: instruction fetch and IF/ID register
+\item
+  ID/EX: decode, execute, branch/jump resolve, memory request generation
+\item
+  WB: load/store memory access and register file write-back
+\end{itemize}
+
+Instruction memory is instantiated inside IF stage. Data memory is
+instantiated inside WB stage.
+
+\hypertarget{3-top-level-integration}{%
+\subsection{3. Top-Level Integration}\label{3-top-level-integration}}
+
+Module: riscv\_top
+
+\begin{itemize}
+\tightlist
+\item
+  Inputs: clk\_i, rst\_ni
+\item
+  Outputs: illegal\_instr\_o
+\item
+  Parameters:
+\item
+  IMEM\_WORDS (default 1024)
+\item
+  IMEM\_HEX\_FILE (default empty string)
+\end{itemize}
+
+Module: riscv
+
+\begin{itemize}
+\tightlist
+\item
+  Inputs: clk\_i, rst\_ni
+\item
+  Outputs: illegal\_instr\_o
+\item
+  Internal submodules:
+\item
+  riscv\_if\_stage
+\item
+  riscv\_id\_ex\_stage
+\item
+  riscv\_wb\_stage
+\item
+  riscv\_regfile
+\end{itemize}
+
+\hypertarget{4-microarchitecture}{%
+\subsection{4. Microarchitecture}\label{4-microarchitecture}}
+
+\hypertarget{41-pipeline}{%
+\subsubsection{4.1 Pipeline}\label{41-pipeline}}
+
+\begin{itemize}
+\tightlist
+\item
+  3-stage in-order pipeline
+\item
+  No branch prediction
+\item
+  Branch and jump resolution in ID/EX
+\item
+  IF flush when redirect is taken
+\end{itemize}
+
+\hypertarget{42-if-stage}{%
+\subsubsection{4.2 IF Stage}\label{42-if-stage}}
+
+Module: riscv\_if\_stage
+
+\begin{itemize}
+\tightlist
+\item
+  Owns architectural PC register pc\_q
+\item
+  Fetches from riscv\_imem using zero-wait combinational response model
+\item
+  Redirect logic priority:
+\item
+  if pc\_redirect\_valid\_i: pc\_q \textless{}= pc\_redirect\_addr\_i
+\item
+  else: pc\_q \textless{}= pc\_q + 4
+\item
+  IF/ID register outputs:
+\item
+  if\_valid\_o
+\item
+  if\_pc\_o
+\item
+  if\_instr\_o
+\item
+  On reset and flush, IF/ID instruction set to NOP (0x00000013)
+\end{itemize}
+
+\hypertarget{43-idex-stage}{%
+\subsubsection{4.3 ID/EX Stage}\label{43-idex-stage}}
+
+Module: riscv\_id\_ex\_stage
+
+\begin{itemize}
+\tightlist
+\item
+  Decodes opcode/funct3/funct7 and immediates (I/B/J/U/S)
+\item
+  Computes ALU and control-flow results
+\item
+  Generates registered outputs toward WB
+\item
+  Generates illegal\_instr\_o for unsupported encodings
+\item
+  Memory ops are decoded here and turned into mem\_* + load\_* control
+  payload
+\end{itemize}
+
+\hypertarget{44-wb-stage}{%
+\subsubsection{4.4 WB Stage}\label{44-wb-stage}}
+
+Module: riscv\_wb\_stage
+
+\begin{itemize}
+\tightlist
+\item
+  Instantiates riscv\_dmem
+\item
+  Muxes ALU result vs load result
+\item
+  Blocks writes to x0
+\item
+  Registers final register-file write interface:
+\item
+  rf\_we\_o
+\item
+  rf\_waddr\_o
+\item
+  rf\_wdata\_o
+\end{itemize}
+
+\hypertarget{45-register-file}{%
+\subsubsection{4.5 Register File}\label{45-register-file}}
+
+Module: riscv\_regfile
+
+\begin{itemize}
+\tightlist
+\item
+  32 x 32-bit integer registers
+\item
+  2 asynchronous read ports
+\item
+  1 synchronous write port
+\item
+  x0 hardwired to zero
+\end{itemize}
+
+\hypertarget{5-functional-units}{%
+\subsection{5. Functional Units}\label{5-functional-units}}
+
+\begin{itemize}
+\tightlist
+\item
+  riscv\_alu\_addsub: add/sub with operand isolation
+\item
+  riscv\_alu\_shift: sll/srl/sra with operand isolation
+\item
+  riscv\_alu\_logic: xor/or/and with operand isolation
+\item
+  riscv\_alu\_compare: signed/unsigned less-than comparator
+\end{itemize}
+
+\hypertarget{6-instruction-support-implemented}{%
+\subsection{6. Instruction Support
+(Implemented)}\label{6-instruction-support-implemented}}
+
+\hypertarget{61-r-type}{%
+\subsubsection{6.1 R-type}\label{61-r-type}}
+
+\begin{itemize}
+\tightlist
+\item
+  add, sub
+\item
+  sll, slt, sltu
+\item
+  xor, srl, sra
+\item
+  or, and
+\end{itemize}
+
+\hypertarget{62-i-type-alu}{%
+\subsubsection{6.2 I-type ALU}\label{62-i-type-alu}}
+
+\begin{itemize}
+\tightlist
+\item
+  addi, slti, sltiu
+\item
+  xori, ori, andi
+\item
+  slli, srli, srai
+\end{itemize}
+
+\hypertarget{63-ujb-type}{%
+\subsubsection{6.3 U/J/B-type}\label{63-ujb-type}}
+
+\begin{itemize}
+\tightlist
+\item
+  lui, auipc
+\item
+  jal, jalr
+\item
+  beq, bne, blt, bge, bltu, bgeu
+\end{itemize}
+
+\hypertarget{64-loadstore}{%
+\subsubsection{6.4 Load/Store}\label{64-loadstore}}
+
+\begin{itemize}
+\tightlist
+\item
+  Loads: lb, lh, lw, lbu, lhu
+\item
+  Stores: sb, sh, sw
+\end{itemize}
+
+\hypertarget{7-not-implemented}{%
+\subsection{7. Not Implemented}\label{7-not-implemented}}
+
+\begin{itemize}
+\tightlist
+\item
+  ecall, ebreak
+\item
+  CSR instructions (csrrw/csrrs/csrrc/csrrwi/csrrsi/csrrci)
+\item
+  fence, fence.i
+\item
+  exceptions/traps pipeline handling (beyond illegal flag)
+\end{itemize}
+
+\hypertarget{8-memory-subsystem-model}{%
+\subsection{8. Memory Subsystem Model}\label{8-memory-subsystem-model}}
+
+\hypertarget{81-imem}{%
+\subsubsection{8.1 IMEM}\label{81-imem}}
+
+Module: riscv\_imem
+
+\begin{itemize}
+\tightlist
+\item
+  Depth: IMEM\_WORDS x 32 bits
+\item
+  Optional preload through \$readmemh(IMEM\_HEX\_FILE, imem)
+\item
+  Combinational read
+\item
+  Out-of-range or misaligned fetch returns NOP
+\end{itemize}
+
+\hypertarget{82-dmem}{%
+\subsubsection{8.2 DMEM}\label{82-dmem}}
+
+Module: riscv\_dmem
+
+\begin{itemize}
+\tightlist
+\item
+  Depth: DMEM\_WORDS x 32 bits (default 1024)
+\item
+  Synchronous writes
+\item
+  Combinational reads
+\item
+  Width support:
+\item
+  00 byte
+\item
+  01 halfword
+\item
+  10 word
+\item
+  Sign/zero extension on load controlled by sign\_ext\_i
+\item
+  Misaligned/out-of-range reads currently return zero
+\end{itemize}
+
+\hypertarget{9-hazard-and-forwarding-behavior}{%
+\subsection{9. Hazard and Forwarding
+Behavior}\label{9-hazard-and-forwarding-behavior}}
+
+Current forwarding in riscv:
+
+\begin{itemize}
+\tightlist
+\item
+  WB-to-EX forwarding from wb\_rf\_* to rs1\_data\_fwd/rs2\_data\_fwd
+\item
+  EX-to-EX forwarding from id\_wb\_*\_q to rs1\_data\_fwd/rs2\_data\_fwd
+\item
+  Priority: EX-to-EX over WB-to-EX
+\end{itemize}
+
+Coverage:
+
+\begin{itemize}
+\tightlist
+\item
+  Resolves common ALU RAW dependencies including back-to-back ALU
+  producer-consumer
+\end{itemize}
+
+Known limitation:
+
+\begin{itemize}
+\tightlist
+\item
+  Load-use hazard is not explicitly stalled
+\item
+  A dependent instruction immediately after a load can require dedicated
+  stall/bypass logic depending on timing
+\end{itemize}
+
+\hypertarget{10-control-flow-behavior}{%
+\subsection{10. Control-Flow Behavior}\label{10-control-flow-behavior}}
+
+\begin{itemize}
+\tightlist
+\item
+  Branches resolved in ID/EX
+\item
+  Redirect target computed in ID/EX and registered out
+\item
+  IF flush on taken redirect to clear wrong-path IF/ID content
+\item
+  jal writes rd = pc + 4
+\item
+  jalr writes rd = pc + 4 and clears target bit 0
+\end{itemize}
+
+\hypertarget{11-reset-behavior}{%
+\subsection{11. Reset Behavior}\label{11-reset-behavior}}
+
+\begin{itemize}
+\tightlist
+\item
+  Active-low reset rst\_ni
+\item
+  IF stage resets PC and IF/ID outputs to known values
+\item
+  ID/EX and WB stage outputs reset to zero
+\item
+  Register file resets all registers to zero and keeps x0 tied to zero
+\item
+  DMEM initializes all words to zero (initial block)
+\item
+  IMEM initializes to NOP unless preloaded by hex
+\end{itemize}
+
+\hypertarget{12-verification-status-from-included-tb}{%
+\subsection{12. Verification Status (From Included
+TB)}\label{12-verification-status-from-included-tb}}
+
+Testbench: source/sv/tb/riscv\_top\_tb.sv
+
+\begin{itemize}
+\tightlist
+\item
+  Clock: 10 ns period
+\item
+  Reset: deassert after 5 cycles
+\item
+  Run window: 150 cycles after reset release
+\item
+  Checks:
+\item
+  illegal\_instr\_o remains low
+\item
+  register expected values for x1, x2, x3, x4, x5, x6, x7, x8, x9, x10,
+  x11, x12, x13, x14, x15, x20
+\item
+  DMEM{[}0{]} and DMEM{[}4{]} expected content
+\end{itemize}
+
+Program source for test intent: source/sv/rtl/imem\_test\_sequence.md
+
+\hypertarget{13-interface-signals-pipeline-boundaries}{%
+\subsection{13. Interface Signals (Pipeline
+Boundaries)}\label{13-interface-signals-pipeline-boundaries}}
+
+IF -\textgreater{} ID/EX
+
+\begin{itemize}
+\tightlist
+\item
+  if\_valid\_q
+\item
+  if\_pc\_q
+\item
+  if\_instr\_q
+\end{itemize}
+
+ID/EX -\textgreater{} IF (redirect)
+
+\begin{itemize}
+\tightlist
+\item
+  id\_pc\_redirect\_valid\_q
+\item
+  id\_pc\_redirect\_addr\_q
+\end{itemize}
+
+ID/EX -\textgreater{} WB
+
+\begin{itemize}
+\tightlist
+\item
+  id\_wb\_rd\_q
+\item
+  id\_wb\_data\_q
+\item
+  id\_wb\_we\_q
+\item
+  mem\_req\_q
+\item
+  mem\_addr\_q
+\item
+  mem\_we\_q
+\item
+  mem\_width\_q
+\item
+  mem\_sign\_ext\_q
+\item
+  mem\_wdata\_q
+\item
+  load\_valid\_q
+\item
+  load\_rd\_q
+\end{itemize}
+
+WB -\textgreater{} Regfile
+
+\begin{itemize}
+\tightlist
+\item
+  wb\_rf\_we
+\item
+  wb\_rf\_waddr
+\item
+  wb\_rf\_wdata
+\end{itemize}
+
+\hypertarget{14-known-rtl-notes}{%
+\subsection{14. Known RTL Notes}\label{14-known-rtl-notes}}
+
+\begin{itemize}
+\tightlist
+\item
+  In riscv\_wb\_stage there is no explicit wb\_valid\_i input. Validity
+  is currently gated in top-level regfile write-enable path using
+  id\_wb\_valid\_q.
+\item
+  This coupling works for current bring-up flow but is structurally
+  weaker than having a fully stage-local valid in WB.
+\item
+  Header comments in riscv\_id\_ex\_stage mention some operations as
+  planned, but decode logic shows they are implemented.
+\end{itemize}
+
+\hypertarget{15-recommendations-for-next-revision}{%
+\subsection{15. Recommendations for Next
+Revision}\label{15-recommendations-for-next-revision}}
+
+\begin{itemize}
+\tightlist
+\item
+  Add explicit load-use hazard detection and pipeline stall/kill
+  handling
+\item
+  Move/standardize valid propagation with a dedicated per-stage valid
+  protocol
+\item
+  Introduce interface bundles for stage-to-stage payload to improve
+  maintainability
+\item
+  Add trap/exception handling path (illegal, misaligned, access faults)
+\item
+  Add regression with directed hazard tests and randomized instruction
+  streams
+\end{itemize}
+
+\end{document}
