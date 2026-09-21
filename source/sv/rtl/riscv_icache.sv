@@ -27,7 +27,7 @@
 // -----------------------------------------------------------------------------
 module riscv_icache #(
   parameter int ICACHE_LINE_WORDS = 8,   // words per line (8 -> 256-bit line)
-  parameter int ICACHE_NUM_LINES  = 128 // number of lines
+  parameter int LINE_LENGHT = 2**ICACHE_LINE_WORDS // line width in bits
     // line width in bits (default 256)
 ) (
   input  logic        clk_i,
@@ -54,7 +54,7 @@ module riscv_icache #(
   localparam logic [1:0] HTRANS_NONSEQ = 2'b10;
   // AHB-Lite HSIZE encoding: line-wide transfers only (32 B when ICACHE_LINE_WORDS=8).
   localparam logic [2:0] HSIZE_LINE    = 3'($clog2(ICACHE_LINE_WORDS) + 2);
-  localparam int LINE_LENGHT = 2**ICACHE_LINE_WORDS;
+  localparam int ICACHE_NUM_LINES  = 128; // number of lines
 
   localparam int RAW_OFFSET_BITS = (ICACHE_LINE_WORDS > 1) ? $clog2(ICACHE_LINE_WORDS) : 0;
   localparam int OFFSET_BITS     = (RAW_OFFSET_BITS > 0) ? RAW_OFFSET_BITS : 1;

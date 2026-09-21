@@ -22,12 +22,12 @@
 // -----------------------------------------------------------------------------
 module riscv_top #(
   parameter int IMEM_WORDS = 1024,
-  parameter string IMEM_HEX_FILE = "",
   parameter int LINE_WORDS = 8,
   parameter int LINE_LENGHT = 2**LINE_WORDS
 ) (
   input  logic        clk_i,
   input  logic        rst_ni,
+  input  logic        en_i,
   output logic        illegal_instr_o
 );
 
@@ -166,10 +166,10 @@ module riscv_top #(
   end
 
   // Core instance.
-  riscv u_riscv #(
+  riscv #(
     .LINE_WORDS    (LINE_WORDS),
     .LINE_LENGHT   (LINE_LENGHT)
-  )
+  )u_riscv
   (
     .clk_i          (clk_i),
     .rst_ni         (rst_ni),
@@ -194,7 +194,6 @@ module riscv_top #(
   // Shared unified RAM AHB-Lite slave (4 GB address space).
   riscv_ahb_ram_slave #(
     .BOOT_WORDS    (IMEM_WORDS),
-    .BOOT_HEX_FILE (IMEM_HEX_FILE),
     .LINE_WORDS    (LINE_WORDS),
     .LINE_LENGHT   (LINE_LENGHT)
   ) u_ahb_ram_slave (

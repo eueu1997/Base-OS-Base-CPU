@@ -1,0 +1,72 @@
+# -*- tcl -*-                                        vim:shiftwidth=2:expandtab
+#-----------------------------------------------------------------------------#
+# UPF2.0 (Non-bias) template
+#-----------------------------------------------------------------------------#
+
+set_design_attributes -elements {.} -attribute lower_domain_boundary true
+
+#-----------------------------------------------------------------------------#
+# Create power domain
+#-----------------------------------------------------------------------------#
+create_power_domain PD_DSADC -include_scope
+
+#-----------------------------------------------------------------------------#
+# Create supply ports
+#-----------------------------------------------------------------------------#
+create_supply_port VDD
+create_supply_port VSS
+
+#-----------------------------------------------------------------------------#
+# Create supply nets
+#-----------------------------------------------------------------------------#
+create_supply_net VDD -resolve parallel
+create_supply_net VSS -resolve parallel
+
+#-----------------------------------------------------------------------------#
+# Create supply sets
+#-----------------------------------------------------------------------------#
+create_supply_set SS_VDD_VSS
+
+#-----------------------------------------------------------------------------#
+# Connect supply nets to supply ports
+#-----------------------------------------------------------------------------#
+connect_supply_net SS_VDD_VSS.power -ports VDD
+connect_supply_net SS_VDD_VSS.ground -ports VSS
+
+#-----------------------------------------------------------------------------#
+# Associate supply set to power domain
+#-----------------------------------------------------------------------------#
+associate_supply_set SS_VDD_VSS -handle PD_DSADC.primary
+
+#-----------------------------------------------------------------------------#
+# Connect P/G nets to internal instances
+#-----------------------------------------------------------------------------#
+connect_supply_net SS_VDD_VSS.power -ports {Iana/VDD}
+connect_supply_net SS_VDD_VSS.ground -ports {Iana/VSS}
+
+#-----------------------------------------------------------------------------#
+# IO related power
+#-----------------------------------------------------------------------------#
+set_port_attributes -port port_i -driver_supply SS_VDD_VSS
+set_port_attributes -port port_o -receiver_supply SS_VDD_VSS
+
+#-----------------------------------------------------------------------------#
+# Create supply sets with function
+#-----------------------------------------------------------------------------#
+create_supply_set SS_VDD_VSS -function {power VDD} -function {ground VSS} -update
+
+#-----------------------------------------------------------------------------#
+# PST Table
+#-----------------------------------------------------------------------------#
+add_port_state VDD -state {VDD_operation_slow 1.07} -state {VDD_operation_slow_ITE 1.08} \
+                   -state {VDD_operation_nominal 1.25} -state {VDD_operation_fast 1.37}
+add_port_state VSS -state {VSS_operation 0}
+
+create_pst pst_DSADC -supplies [list VDD VSS]
+
+add_pst_state ALL_ON_slow     -pst pst_DSADC -state {VDD_operation_slow VSS_operation}
+add_pst_state ALL_ON_slow_ITE -pst pst_DSADC -state {VDD_operation_slow_ITE VSS_operation}
+add_pst_state ALL_ON_nominal  -pst pst_DSADC -state {VDD_operation_nominal VSS_operation}
+add_pst_state ALL_ON_fast     -pst pst_DSADC -state {VDD_operation_fast VSS_operation}
+
+# Eof

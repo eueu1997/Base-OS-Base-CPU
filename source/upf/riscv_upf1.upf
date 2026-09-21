@@ -1,0 +1,48 @@
+# -*- tcl -*-                                        vim:shiftwidth=2:expandtab
+#-----------------------------------------------------------------------------#
+# UPF1.0 template
+#-----------------------------------------------------------------------------#
+set_scope
+
+#-----------------------------------------------------------------------------#
+# Define power domain of current design
+#-----------------------------------------------------------------------------#
+create_power_domain pd_main
+
+#-----------------------------------------------------------------------------#
+# Define P/G ports of current design
+#-----------------------------------------------------------------------------#
+create_supply_port VDD -domain pd_main
+create_supply_port VSS -domain pd_main
+
+#-----------------------------------------------------------------------------#
+# Define P/G nets of current design
+#-----------------------------------------------------------------------------#
+create_supply_net VDD -domain pd_main
+create_supply_net VSS -domain pd_main
+
+#-----------------------------------------------------------------------------#
+# Connect P/G nets to ports of current design
+#-----------------------------------------------------------------------------#
+connect_supply_net VDD -ports VDD
+connect_supply_net VSS -ports VSS
+
+#-----------------------------------------------------------------------------#
+# Define which P/G net is power and which is ground
+#-----------------------------------------------------------------------------#
+set_domain_supply_net pd_main -primary_power_net VDD -primary_ground_net VSS
+
+#-----------------------------------------------------------------------------#
+# PST Table
+#-----------------------------------------------------------------------------#
+
+add_port_state VDD -state {ON_SLOW 1.15} -state {ON_FAST 1.50}
+add_port_state VSS -state {ON_GND 0.00}
+
+#Power State Table
+
+create_pst visual_upf_generated_pst -supplies { VDD  VSS }
+add_pst_state s0 -pst visual_upf_generated_pst -state { ON_FAST ON_GND  }
+add_pst_state s4 -pst visual_upf_generated_pst -state { ON_SLOW ON_GND  }
+
+# Eof

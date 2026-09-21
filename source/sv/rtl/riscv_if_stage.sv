@@ -55,8 +55,8 @@ module riscv_if_stage #(
   // Direct-mapped instruction cache instance; refills over the AHB-Lite
   // master port passed through to the top of this stage.
   riscv_icache #(
-    .LINE_WORDS   (LINE_WORDS),
-    .LINE_LENGHT  (LINE_LENGHT)
+    .ICACHE_LINE_WORDS   (LINE_WORDS),
+    .LINE_LENGHT(LINE_LENGHT)
   ) u_icache (
     .clk_i        (clk_i),
     .rst_ni       (rst_ni),
