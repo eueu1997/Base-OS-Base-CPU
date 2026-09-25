@@ -16,11 +16,17 @@ module tomasulo_top # (
   input logic clk_i,
   input logic rst_i,
   input logic [31:0] intr_i,
+  input logic [31:0] pc_i,
   // Output to functional units
   output logic [FUNC_UNIT_N - 1:0] [31:0] source_value1_o,
   output logic [FUNC_UNIT_N - 1:0] [31:0] source_value2_o,
   output logic [FUNC_UNIT_N - 1:0] [$clog2(ROB_SIZE)-1:0] destination_o,
   output logic [FUNC_UNIT_N - 1:0]        fu_en_o,
+  output logic [FUNC_UNIT_N - 1:0] [31:0] instr_o,
+  output logic [FUNC_UNIT_N - 1:0] [31:0] pc_o,
+  output logic commit_valid_o,
+  output logic [4:0] commit_rd_o,
+  output logic [31:0] commit_value_o,
   output logic illegal_instr_o,
   // Input results from functional units
   input logic [FUNC_UNIT_N - 1:0] [31:0] result_value_i,
@@ -58,6 +64,10 @@ module tomasulo_top # (
   logic [4:0] rd_s;
   logic [4:0] rs1_s;
   logic [4:0] rs2_s;
+
+  assign commit_valid_o = ren_commit_s;
+  assign commit_rd_o = rdest_commit_s;
+  assign commit_value_o = rvalue_commit_s;
 
   // Signal decodification
   assign rd_s = intr_i[11:7];
@@ -138,6 +148,9 @@ generate
     .instr_load_i(instr_load_s[rs_index]),
      .rob_dest_i(rob_pos_issued_inst_s),
      .instr_i(intr_i),
+    .pc_i(pc_i),
+    .instr_o(instr_o[rs_index]),
+    .pc_o(pc_o[rs_index]),
 
      .fu_dest_i(result_dest_i), // TODO : qui la situazione è complessa . ogni riga di rs dovrebbe campionare ogni bus di uscita delle FU per vedere le destinazioni
      .fu_value_i(result_value_i),
