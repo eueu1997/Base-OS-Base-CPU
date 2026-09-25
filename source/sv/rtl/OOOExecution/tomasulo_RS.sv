@@ -1,6 +1,6 @@
 module tomasulo_RS # (
   parameter int ROB_SIZE = 8,
-  parameter int FUNC_UNIT_N = 4
+  parameter int FUNC_UNIT_N = 8
 )(
   input logic                        clk_i,
   input logic                        rst_ni,
@@ -11,10 +11,11 @@ module tomasulo_RS # (
   input logic [$clog2(ROB_SIZE)-1:0] rob_value1_s,
   input logic [$clog2(ROB_SIZE)-1:0] rob_value2_s,
   input logic                        instr_load_i,
+  input logic [31:0]                  instr_i,
   input logic [$clog2(ROB_SIZE)-1:0] rob_dest_i,
   // Data bus input
-  input logic [$clog2(FUNC_UNIT_N) -1 : 0][$clog2(ROB_SIZE)-1:0] fu_dest_i,
-  input logic [$clog2(FUNC_UNIT_N) -1 : 0][31:0]                 fu_value_i,
+  input logic [FUNC_UNIT_N -1 : 0][$clog2(ROB_SIZE)-1:0] fu_dest_i,
+  input logic [FUNC_UNIT_N -1 : 0][31:0]                 fu_value_i,
 
   // RS ready to be executed
   output logic                       rs_ready_o,

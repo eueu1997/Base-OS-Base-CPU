@@ -1,7 +1,7 @@
 module tomasulo_ROB #
   (
     parameter int ROB_SIZE = 8,
-    parameter int FUNC_UNIT_N = 4
+    parameter int FUNC_UNIT_N = 8
   ) (
     input logic                           clk_i,
     input logic                           rst_i,
@@ -12,9 +12,9 @@ module tomasulo_ROB #
     output logic [$clog2(ROB_SIZE)-1 : 0] robpos_commit_o,
     output logic                          ren_commit_o,
     // Touple {ROB destination,value} from all the FU
-    input logic  [$clog2(FUNC_UNIT_N) -1 : 0][$clog2(ROB_SIZE) -1 : 0]           rdest_i,
-    input logic  [$clog2(FUNC_UNIT_N) -1 : 0][31:0]                              rvalue_i,
-    input logic  [$clog2(FUNC_UNIT_N) -1 : 0]                                    ren_i
+    input logic  [FUNC_UNIT_N -1 : 0][$clog2(ROB_SIZE) -1 : 0]           rdest_i,
+    input logic  [FUNC_UNIT_N -1 : 0][31:0]                              rvalue_i,
+    input logic  [FUNC_UNIT_N -1 : 0]                                    ren_i
 
 
   );
