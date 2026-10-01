@@ -8,7 +8,7 @@
 // Functionality
 // - Connects Tomasulo dispatch/result buses to eight functional-unit slots.
 // - Slots 0..4 implement ADD, SUB, SHIFT, BITWISE and COMPARE respectively.
-// - Slots 5..7 are inactive BRANCH, JUMP and MEMORY placeholders.
+// - Slots 5..7 are combinational BRANCH, JUMP and stateless MEMORY models.
 // - ALU control uses the instruction and PC dispatched with each RS operand pair.
 // - Existing Tomasulo issue/retirement limitations are not repaired here.
 //
@@ -93,7 +93,10 @@
 // Integration Notes
 // - ALUs are combinational; result valid and ROB tag follow RS dispatch.
 // - WB outputs observe the ROB commit bus; Tomasulo writes its internal RF.
-// - Placeholder FUs never complete; redirect and memory outputs remain inactive.
+// - All FUs complete combinationally; memory outputs expose model transactions.
+// - Branch taken/target and jump target are internal waveform signals only.
+// - Redirect outputs remain inactive: this model has no speculative recovery.
+// - Loads return synthetic data; stores never modify RAM. No memory faults modeled.
 // - valid_i/hold_i and wb_rf_* inputs are reserved, not connected to Tomasulo.
 // - Tomasulo still lacks issue-valid/backpressure and flush support.
 // -----------------------------------------------------------------------------
@@ -154,6 +157,11 @@ module riscv_id_ex_stage (
   logic [31:0] add_op_a;
   logic [31:0] add_op_b;
   logic [1:0] logic_op_sel;
+  logic decode_illegal;
+  logic [FU_MEMORY:FU_BRANCH] model_illegal;
+  logic branch_taken;
+  logic [31:0] branch_target;
+  logic [31:0] jump_target;
 
   tomasulo_top #(
     .FUNC_UNIT_N(FUNC_UNIT_N),
@@ -172,7 +180,7 @@ module riscv_id_ex_stage (
     .commit_valid_o(wb_valid_o),
     .commit_rd_o(wb_rd_o),
     .commit_value_o(wb_data_o),
-    .illegal_instr_o(illegal_instr_o),
+    .illegal_instr_o(decode_illegal),
     .result_value_i(fu_result),
     .result_dest_i(fu_result_dest),
     .result_en_i(fu_result_valid)
@@ -255,7 +263,7 @@ module riscv_id_ex_stage (
   );
 
   riscv_fu_branch #(.ROB_TAG_WIDTH(ROB_TAG_WIDTH)) u_fu_branch (
-    .enable_i(fu_enable[FU_BRANCH]),
+    .enable_i(rst_ni && fu_enable[FU_BRANCH]),
     .instr_i(fu_instr[FU_BRANCH]),
     .pc_i(fu_pc[FU_BRANCH]),
     .op_a_i(fu_source1[FU_BRANCH]),
@@ -263,11 +271,14 @@ module riscv_id_ex_stage (
     .dest_i(fu_dest[FU_BRANCH]),
     .result_o(fu_result[FU_BRANCH]),
     .dest_o(fu_result_dest[FU_BRANCH]),
-    .valid_o(fu_result_valid[FU_BRANCH])
+    .valid_o(fu_result_valid[FU_BRANCH]),
+    .taken_o(branch_taken),
+    .target_o(branch_target),
+    .illegal_instr_o(model_illegal[FU_BRANCH])
   );
 
   riscv_fu_jump #(.ROB_TAG_WIDTH(ROB_TAG_WIDTH)) u_fu_jump (
-    .enable_i(fu_enable[FU_JUMP]),
+    .enable_i(rst_ni && fu_enable[FU_JUMP]),
     .instr_i(fu_instr[FU_JUMP]),
     .pc_i(fu_pc[FU_JUMP]),
     .op_a_i(fu_source1[FU_JUMP]),
@@ -275,11 +286,13 @@ module riscv_id_ex_stage (
     .dest_i(fu_dest[FU_JUMP]),
     .result_o(fu_result[FU_JUMP]),
     .dest_o(fu_result_dest[FU_JUMP]),
-    .valid_o(fu_result_valid[FU_JUMP])
+    .valid_o(fu_result_valid[FU_JUMP]),
+    .target_o(jump_target),
+    .illegal_instr_o(model_illegal[FU_JUMP])
   );
 
   riscv_fu_memory #(.ROB_TAG_WIDTH(ROB_TAG_WIDTH)) u_fu_memory (
-    .enable_i(fu_enable[FU_MEMORY]),
+    .enable_i(rst_ni && fu_enable[FU_MEMORY]),
     .instr_i(fu_instr[FU_MEMORY]),
     .pc_i(fu_pc[FU_MEMORY]),
     .op_a_i(fu_source1[FU_MEMORY]),
@@ -287,19 +300,21 @@ module riscv_id_ex_stage (
     .dest_i(fu_dest[FU_MEMORY]),
     .result_o(fu_result[FU_MEMORY]),
     .dest_o(fu_result_dest[FU_MEMORY]),
-    .valid_o(fu_result_valid[FU_MEMORY])
+    .valid_o(fu_result_valid[FU_MEMORY]),
+    .addr_o(mem_addr_o),
+    .store_o(mem_we_o),
+    .width_o(mem_width_o),
+    .sign_ext_o(mem_sign_ext_o),
+    .wdata_o(mem_wdata_o),
+    .illegal_instr_o(model_illegal[FU_MEMORY])
   );
 
+  assign illegal_instr_o = decode_illegal || (|model_illegal);
   assign wb_we_o = wb_valid_o && (wb_rd_o != 5'd0);
   assign pc_redirect_valid_o = 1'b0;
   assign pc_redirect_addr_o = '0;
-  assign mem_req_o = 1'b0;
-  assign mem_addr_o = '0;
-  assign mem_we_o = 1'b0;
-  assign mem_width_o = '0;
-  assign mem_sign_ext_o = 1'b0;
-  assign mem_wdata_o = '0;
-  assign load_valid_o = 1'b0;
-  assign load_rd_o = '0;
+  assign mem_req_o = fu_result_valid[FU_MEMORY];
+  assign load_valid_o = mem_req_o && !mem_we_o;
+  assign load_rd_o = load_valid_o ? fu_instr[FU_MEMORY][11:7] : 5'b0;
 
 endmodule

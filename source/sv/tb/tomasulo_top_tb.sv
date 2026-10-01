@@ -11,56 +11,56 @@ module tomasulo_top_tb;
   int instruction_index;
 
   logic [31:0] instruction_stream [0:INSTRUCTION_COUNT-1] = '{
-    32'hfff08193,
-    32'h0020c1b3,
-    32'hffc0a183,
-    32'h402081b3,
-    32'h00208463,
-    32'h01f09193,
-    32'hfffff1b7,
-    32'hfe208e23,
-    32'h0020b1b3,
-    32'h008001ef,
-    32'h002081b3,
-    32'hfff0e193,
-    32'h0020d1b3,
-    32'hffc09183,
-    32'h00209463,
-    32'hfff0a193,
-    32'hffc081e7,
-    32'h0020f1b3,
-    32'hfe20ae23,
-    32'hfffff197,
-    32'h4020d1b3,
-    32'hffc0c183,
-    32'h0020c463,
-    32'hfff0c193,
-    32'h002091b3,
-    32'hfff0b193,
-    32'hfe209e23,
-    32'h0020e1b3,
-    32'hffc0d183,
-    32'h0020d463,
-    32'h01f0d193,
-    32'hfff0f193,
-    32'h0020a1b3,
-    32'hffc08183,
-    32'h0020e463,
-    32'h41f0d193,
-    32'h0020f463,
-    32'h00500093,
-    32'h00300113,
-    32'h001101b3,
-    32'h40110233,
-    32'h00111293,
-    32'h00116333,
-    32'h001123b3,
-    32'h00408463,
-    32'h010002ef,
-    32'h00012303,
-    32'h00312223,
-    32'h000023b7,
-    32'h00002417
+    32'hfff08193, // addi  x3, x1, -1
+    32'h0020c1b3, // xor   x3, x1, x2
+    32'hffc0a183, // lw    x3, -4(x1)
+    32'h402081b3, // sub   x3, x1, x2
+    32'h00208463, // beq   x1, x2, .+8
+    32'h01f09193, // slli  x3, x1, 31
+    32'hfffff1b7, // lui   x3, 0xfffff
+    32'hfe208e23, // sb    x2, -4(x1)
+    32'h0020b1b3, // sltu  x3, x1, x2
+    32'h008001ef, // jal   x3, .+8
+    32'h002081b3, // add   x3, x1, x2
+    32'hfff0e193, // ori   x3, x1, -1
+    32'h0020d1b3, // srl   x3, x1, x2
+    32'hffc09183, // lh    x3, -4(x1)
+    32'h00209463, // bne   x1, x2, .+8
+    32'hfff0a193, // slti  x3, x1, -1
+    32'hffc081e7, // jalr  x3, -4(x1)
+    32'h0020f1b3, // and   x3, x1, x2
+    32'hfe20ae23, // sw    x2, -4(x1)
+    32'hfffff197, // auipc x3, 0xfffff
+    32'h4020d1b3, // sra   x3, x1, x2
+    32'hffc0c183, // lbu   x3, -4(x1)
+    32'h0020c463, // blt   x1, x2, .+8
+    32'hfff0c193, // xori  x3, x1, -1
+    32'h002091b3, // sll   x3, x1, x2
+    32'hfff0b193, // sltiu x3, x1, -1
+    32'hfe209e23, // sh    x2, -4(x1)
+    32'h0020e1b3, // or    x3, x1, x2
+    32'hffc0d183, // lhu   x3, -4(x1)
+    32'h0020d463, // bge   x1, x2, .+8
+    32'h01f0d193, // srli  x3, x1, 31
+    32'hfff0f193, // andi  x3, x1, -1
+    32'h0020a1b3, // slt   x3, x1, x2
+    32'hffc08183, // lb    x3, -4(x1)
+    32'h0020e463, // bltu  x1, x2, .+8
+    32'h41f0d193, // srai  x3, x1, 31
+    32'h0020f463, // bgeu  x1, x2, .+8
+    32'h00500093, // addi  x1, x0, 5
+    32'h00300113, // addi  x2, x0, 3
+    32'h001101b3, // add   x3, x2, x1
+    32'h40110233, // sub   x4, x2, x1
+    32'h00111293, // sll   x5, x2, x1
+    32'h00116333, // or    x6, x2, x1
+    32'h001123b3, // slt   x7, x2, x1
+    32'h00408463, // beq   x1, x4, .+8
+    32'h010002ef, // jal   x5, .+16
+    32'h00012303, // lw    x6, 0(x2)
+    32'h00312223, // sw    x3, 4(x2)
+    32'h000023b7, // lui   x7, 0x2
+    32'h00002417  // auipc x8, 0x2
   };
 
   tomasulo_top u_dut (

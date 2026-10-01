@@ -22,6 +22,7 @@ module tomasulo_top # (
   output logic [FUNC_UNIT_N - 1:0] [31:0] source_value2_o,
   output logic [FUNC_UNIT_N - 1:0] [$clog2(ROB_SIZE)-1:0] destination_o,
   output logic [FUNC_UNIT_N - 1:0]        fu_en_o,
+  output logic [FUNC_UNIT_N - 1:0]        rs_accept_o,
   output logic [FUNC_UNIT_N - 1:0] [31:0] instr_o,
   output logic [FUNC_UNIT_N - 1:0] [31:0] pc_o,
   output logic commit_valid_o,
@@ -133,32 +134,40 @@ module tomasulo_top # (
 
 generate
   for(genvar rs_index = 0; rs_index < FUNC_UNIT_N; rs_index++)begin : gen_rs
-    tomasulo_RS #(
+    logic full_rs_s;
+    assign rs_accept_o[rs_index] = !full_rs_s;
+
+    tomasulo_RS_top #(
       .ROB_SIZE(ROB_SIZE),
-      .FUNC_UNIT_N(FUNC_UNIT_N)
+      .FUNC_UNIT_N(FUNC_UNIT_N),
+      .RS_SIZE(RS_SIZE)
     ) rs_i (
-     .clk_i(clk_i),
-     .rst_ni(rst_i),
-     .register_value1_i(rsource1_value_s),
-     .register_value2_i(rsource2_value_s),
-     .register1_avail_i(rsource1_en_s),
-     .register2_avail_i(rsource2_en_s),
-     .rob_value1_s(rsource1_rob_s),
-     .rob_value2_s(rsource2_rob_s),
+    .clk_i(clk_i),
+    .rst_ni(rst_i),
+    .register_value1_i(rsource1_value_s),
+    .register_value2_i(rsource2_value_s),
+    .register1_avail_i(rsource1_en_s),
+    .register2_avail_i(rsource2_en_s),
+    .rob_value1_s(rsource1_rob_s),
+    .rob_value2_s(rsource2_rob_s),
     .instr_load_i(instr_load_s[rs_index]),
-     .rob_dest_i(rob_pos_issued_inst_s),
-     .instr_i(intr_i),
+    .rob_dest_i(rob_pos_issued_inst_s),
+    .instr_i(intr_i),
     .pc_i(pc_i),
     .instr_o(instr_o[rs_index]),
     .pc_o(pc_o[rs_index]),
 
-     .fu_dest_i(result_dest_i), // TODO : qui la situazione è complessa . ogni riga di rs dovrebbe campionare ogni bus di uscita delle FU per vedere le destinazioni
-     .fu_value_i(result_value_i),
+    .fu_dest_i(result_dest_i),
+    .fu_value_i(result_value_i),
+    .fu_valid_i(result_en_i),
+    .full_rs_o(full_rs_s),
+    .empty_rs_o(),
+    .fu_en_i(1'b1),
 
-     .rs_ready_o(fu_en_o[rs_index]),
-     .rs1_o(source_value1_o[rs_index]),
-     .rs2_o(source_value2_o[rs_index]),
-     .rd_o(destination_o[rs_index])
+    .fu_exe_en_o(fu_en_o[rs_index]),
+    .rs1_o(source_value1_o[rs_index]),
+    .rs2_o(source_value2_o[rs_index]),
+    .rd_o(destination_o[rs_index])
     );
   end
 endgenerate

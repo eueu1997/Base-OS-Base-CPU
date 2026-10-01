@@ -7,10 +7,10 @@ module tomasulo_RF #(
   input logic [4:0]             rsource1_issue_i,  // Register source 1 during issue phase
   input logic [4:0]             rsource2_issue_i,  // Register source 2 during issue phase
   input logic [4:0]             rdest_issue_i,     // Register destination to be saved in RAT with rob_inst
-  input logic [ROB_SIZE-1 : 0]  rob_inst_issue_i,       // ROB position of register destination of issuing instruction
+  input logic [$clog2(ROB_SIZE)-1 : 0]  rob_inst_issue_i,       // ROB position of register destination of issuing instruction
   input logic [4:0]             rdest_commit_i,    // Register destination of committing instruction
   input logic [31:0]            value_commit_i,    // Register value of committing instruction
-  input logic [ROB_SIZE-1 : 0]  rob_inst_commit_i, // ROB position of committing instruction
+  input logic [$clog2(ROB_SIZE)-1 : 0]  rob_inst_commit_i, // ROB position of committing instruction
   input logic                   we_commit_i,       // Write enable of committing instruction
   output logic [31:0]           rsource1_value_o,
   output logic [31:0]           rsource2_value_o,
@@ -21,9 +21,9 @@ module tomasulo_RF #(
 );
 
   // Integer register file storage (x0..x31).
-  logic [ROB_SIZE-1:0]  rat_en_s;
-  logic [31:0]          rat_q [ROB_SIZE-1 : 0];
-  logic [31:0]          rf_q [31:0];
+  logic [31:0]                           rat_en_s;
+  logic [31:0][$clog2(ROB_SIZE)-1 : 0]   rat_q ;
+  logic [31:0][31:0]                     rf_q ;
   integer i;
 
 
@@ -62,7 +62,7 @@ module tomasulo_RF #(
           rsource1_en_o <= 1'b0;
         end
         if (!rat_en_s[rsource2_issue_i]) begin
-          rsource2_value_o = (rsource1_issue_i == 5'd0) ? 32'h0000_0000 : rf_q[rsource1_issue_i];
+          rsource2_value_o = (rsource2_issue_i == 5'd0) ? 32'h0000_0000 : rf_q[rsource2_issue_i];
           rsource2_en_o <= 1'b1;
         end else begin
           rsource2_rob_o <= rat_q[rsource2_issue_i];

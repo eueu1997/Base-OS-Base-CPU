@@ -42,7 +42,7 @@ module tomasulo_ROB #
         dest_rob_s[last_p_s] <= reg_dest_i;
         commit_rob_s[last_p_s] <= 1'b0;
         last_p_s <= last_p_s + 1 ;
-        if (last_p_s + 1 == first_p_s)
+        if (($clog2(ROB_SIZE)'(last_p_s + 1) == first_p_s)) 
           rob_full_s <= 1'b1;
         else
           rob_full_s <= 1'b0;
