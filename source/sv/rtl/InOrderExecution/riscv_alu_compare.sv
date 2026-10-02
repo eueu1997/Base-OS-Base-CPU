@@ -14,7 +14,8 @@ module riscv_alu_compare (
   input  logic        unsigned_i,
   input  logic [31:0] op_a_i,
   input  logic [31:0] op_b_i,
-  output logic [31:0] result_o
+  output logic [31:0] result_o,
+  output logic        valid_o
 );
 
   logic [31:0] op_a_iso;
@@ -33,6 +34,7 @@ module riscv_alu_compare (
     end
 
     result_o = less_than ? 32'd1 : 32'd0;
+    valid_o = enable_i;
   end
 
 endmodule

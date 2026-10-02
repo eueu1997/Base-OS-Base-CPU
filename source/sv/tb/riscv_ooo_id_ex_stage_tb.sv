@@ -93,7 +93,23 @@ module riscv_ooo_id_ex_stage_tb;
   );
 
   always #(CLK_PERIOD / 2) clk = ~clk;
-
+/*
+  always @(posedge clk) begin
+    assert (u_dut.fu_result_valid === (rst_n ? u_dut.fu_enable : '0))
+      else $fatal(1, "FU completion mismatch: reset_n=%b enable=%b valid=%b",
+                  rst_n, u_dut.fu_enable, u_dut.fu_result_valid);
+    assert (u_dut.u_tomasulo.result_en_i === u_dut.fu_result_valid)
+      else $fatal(1, "FU completion flags did not reach Tomasulo");
+    for (int fu_index = 0; fu_index < $bits(u_dut.fu_enable); fu_index++) begin
+      if (u_dut.fu_result_valid[fu_index]) begin
+        assert (u_dut.fu_result_dest[fu_index] === u_dut.fu_dest[fu_index])
+          else $fatal(1, "FU %0d completion tag mismatch", fu_index);
+        assert (!$isunknown(u_dut.fu_result[fu_index]))
+          else $fatal(1, "FU %0d completed without a known result", fu_index);
+      end
+    end
+  end
+*/
   initial begin
     $dumpfile("riscv_ooo_id_ex_stage_tb.vcd");
     $dumpvars(0, riscv_ooo_id_ex_stage_tb);

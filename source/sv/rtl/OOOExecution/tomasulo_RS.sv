@@ -106,19 +106,18 @@ module tomasulo_RS # (
       instr_s <= '0;
       pc_s <= '0;
     end else begin
-      vj_s <= vj_next_s;
-      vk_s <= vk_next_s;
-      vj_avail_s <= vj_avail_next_s;
-      vk_avail_s <= vk_avail_next_s;
-      qj_s <= qj_next_s;
-      qk_s <= qk_next_s;
-
       if (load_s) begin
+        vj_s <= vj_next_s;
+        vk_s <= vk_next_s;
+        vj_avail_s <= vj_avail_next_s;
+        vk_avail_s <= vk_avail_next_s;
+        qj_s <= qj_next_s;
+        qk_s <= qk_next_s;
         busy_s <= 1'b1;
         destination_s <= rob_dest_i;
         instr_s <= instr_i;
         pc_s <= pc_i;
-      end else if (rs_ready_o && slot_exe_hdshk_i) begin
+      end else if (slot_exe_hdshk_i) begin
         busy_s <= 1'b0;
         vj_avail_s <= 1'b0;
         vk_avail_s <= 1'b0;

@@ -35,12 +35,22 @@ module tomasulo_RF #(
       end
       rat_q <= '{default: '0};
       rat_en_s <= '0;
+      rsource1_rob_o <= '0;
+      rsource2_rob_o <= '0;
+      rsource1_value_o <= '0;
+      rsource2_value_o <= '0;
+      rsource1_en_o <= 1'b0;
+      rsource2_en_o <= 1'b0;
     end else begin
       // RAT filling
       rat_q[rdest_issue_i] <= rob_inst_issue_i;
       rat_en_s[rdest_issue_i] <= 1'b1;
       rsource1_en_o <= 1'b0;
       rsource2_en_o <= 1'b0;
+      rsource1_rob_o <= '0;
+      rsource2_rob_o <= '0;
+      rsource1_value_o <= '0;
+      rsource2_value_o <= '0;
       if (we_commit_i) begin
         // If there is a commit from ROB, Write in RF value_commit at rdest_commit
         if (rdest_commit_i != 5'd0) begin

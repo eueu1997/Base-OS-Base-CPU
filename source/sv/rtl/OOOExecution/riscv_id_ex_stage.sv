@@ -91,7 +91,7 @@
 // - Any opcode/funct combination outside this LUT is flagged as illegal.
 //
 // Integration Notes
-// - ALUs are combinational; result valid and ROB tag follow RS dispatch.
+// - FUs receive RS dispatch enables and return combinational completion flags.
 // - WB outputs observe the ROB commit bus; Tomasulo writes its internal RF.
 // - All FUs complete combinationally; memory outputs expose model transactions.
 // - Branch taken/target and jump target are internal waveform signals only.
@@ -175,6 +175,7 @@ module riscv_id_ex_stage (
     .source_value2_o(fu_source2),
     .destination_o(fu_dest),
     .fu_en_o(fu_enable),
+    .rs_accept_o(),
     .instr_o(fu_instr),
     .pc_o(fu_pc),
     .commit_valid_o(wb_valid_o),
@@ -186,12 +187,14 @@ module riscv_id_ex_stage (
     .result_en_i(fu_result_valid)
   );
 
+
+
+
   for (genvar fu_index = FU_ADD; fu_index <= FU_COMPARE; fu_index++) begin : gen_alu_feedback
     assign alu_op_b[fu_index] = (fu_instr[fu_index][6:0] == 7'b0010011)
       ? {{20{fu_instr[fu_index][31]}}, fu_instr[fu_index][31:20]}
       : fu_source2[fu_index];
     assign fu_result_dest[fu_index] = fu_dest[fu_index];
-    assign fu_result_valid[fu_index] = rst_ni && fu_enable[fu_index];
   end
 
   always_comb begin
@@ -222,44 +225,49 @@ module riscv_id_ex_stage (
   end
 
   riscv_alu_addsub u_alu_add (
-    .enable_i(fu_result_valid[FU_ADD]),
+    .enable_i(rst_ni && fu_enable[FU_ADD]),
     .sub_i(1'b0),
     .op_a_i(add_op_a),
     .op_b_i(add_op_b),
-    .result_o(fu_result[FU_ADD])
+    .result_o(fu_result[FU_ADD]),
+    .valid_o(fu_result_valid[FU_ADD])
   );
 
   riscv_alu_addsub u_alu_sub (
-    .enable_i(fu_result_valid[FU_SUB]),
+    .enable_i(rst_ni && fu_enable[FU_SUB]),
     .sub_i(1'b1),
     .op_a_i(fu_source1[FU_SUB]),
     .op_b_i(fu_source2[FU_SUB]),
-    .result_o(fu_result[FU_SUB])
+    .result_o(fu_result[FU_SUB]),
+    .valid_o(fu_result_valid[FU_SUB])
   );
 
   riscv_alu_shift u_alu_shift (
-    .enable_i(fu_result_valid[FU_SHIFT]),
+    .enable_i(rst_ni && fu_enable[FU_SHIFT]),
     .left_i(fu_instr[FU_SHIFT][14:12] == 3'b001),
     .arithmetic_i(fu_instr[FU_SHIFT][30]),
     .op_a_i(fu_source1[FU_SHIFT]),
     .shamt_i(alu_op_b[FU_SHIFT][4:0]),
-    .result_o(fu_result[FU_SHIFT])
+    .result_o(fu_result[FU_SHIFT]),
+    .valid_o(fu_result_valid[FU_SHIFT])
   );
 
   riscv_alu_logic u_alu_logic (
-    .enable_i(fu_result_valid[FU_BITWISE]),
+    .enable_i(rst_ni && fu_enable[FU_BITWISE]),
     .op_sel_i(logic_op_sel),
     .op_a_i(fu_source1[FU_BITWISE]),
     .op_b_i(alu_op_b[FU_BITWISE]),
-    .result_o(fu_result[FU_BITWISE])
+    .result_o(fu_result[FU_BITWISE]),
+    .valid_o(fu_result_valid[FU_BITWISE])
   );
 
   riscv_alu_compare u_alu_compare (
-    .enable_i(fu_result_valid[FU_COMPARE]),
+    .enable_i(rst_ni && fu_enable[FU_COMPARE]),
     .unsigned_i(fu_instr[FU_COMPARE][14:12] == 3'b011),
     .op_a_i(fu_source1[FU_COMPARE]),
     .op_b_i(alu_op_b[FU_COMPARE]),
-    .result_o(fu_result[FU_COMPARE])
+    .result_o(fu_result[FU_COMPARE]),
+    .valid_o(fu_result_valid[FU_COMPARE])
   );
 
   riscv_fu_branch #(.ROB_TAG_WIDTH(ROB_TAG_WIDTH)) u_fu_branch (

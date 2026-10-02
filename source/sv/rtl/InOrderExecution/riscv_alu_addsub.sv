@@ -14,7 +14,8 @@ module riscv_alu_addsub (
   input  logic        sub_i,
   input  logic [31:0] op_a_i,
   input  logic [31:0] op_b_i,
-  output logic [31:0] result_o
+  output logic [31:0] result_o,
+  output logic        valid_o
 );
 
   logic [31:0] op_a_iso;
@@ -30,6 +31,7 @@ module riscv_alu_addsub (
     end else begin
       result_o = op_a_iso + op_b_iso;
     end
+    valid_o = enable_i;
   end
 
 endmodule

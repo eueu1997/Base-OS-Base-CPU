@@ -38,29 +38,40 @@ module tomasulo_RS_top # (
   output logic [$clog2(ROB_SIZE)-1:0]                    rd_o,
   output logic                                           fu_exe_en_o
 );
-  // If all slot are not ready to be loaded, means RS is full
-  assign full_rs_o = ~|slot_ready_s;
-  // If all slot are ready to be loaded, means RS is empty
-  assign empty_rs_o = &slot_ready_s;
 
   // RS enable signals for each slot
   logic [RS_SIZE-1:0] slot_enable_s;
   // RS slot availability signals (ready to accept new instruction)
   logic [RS_SIZE-1:0] slot_ready_s;
-
-  // Combinatorial logic to enable the right RS slot based on availability and instruction load
-  always_comb begin
-    slot_enable_s = '0;
-    for (int slot_index = 0; slot_index < RS_SIZE; slot_index++) begin
-      if (slot_ready_s[slot_index] && instr_load_i) begin
-        slot_enable_s[slot_index] = 1'b1;
-        break;
-      end
-    end
-  end
   // Slot ready to execute signals for each slot
   logic [RS_SIZE-1:0] slot_ready_exe_s, rs_enable_exe_s;
   logic [RS_SIZE-1:0] slot_exe_hdshk_s;
+  logic [31:0]                rs1_s[RS_SIZE-1:0];
+  logic [31:0]                rs2_s[RS_SIZE-1:0];
+  logic [31:0]                instr_s[RS_SIZE-1:0];
+  logic [31:0]                pc_s[RS_SIZE-1:0];
+  logic [$clog2(ROB_SIZE)-1:0]rd_s[RS_SIZE-1:0];
+
+  // If all slot are not ready to be loaded, means RS is full
+  assign full_rs_o = ~|slot_ready_s;
+  // If all slot are ready to be loaded, means RS is empty
+  assign empty_rs_o = &slot_ready_s;
+
+  // Combinatorial logic to enable the right RS slot based on availability and instruction load
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      slot_enable_s <= '0;
+    end else begin
+      slot_enable_s = '0;
+      for (int slot_index = 0; slot_index < RS_SIZE; slot_index++) begin
+        if (slot_ready_s[slot_index] && instr_load_i) begin
+          slot_enable_s[slot_index] = 1'b1;
+          break;
+        end
+      end
+    end
+  end
+
   // Output arbitrer
   always_comb begin
     rs_enable_exe_s = '0;
@@ -71,11 +82,6 @@ module tomasulo_RS_top # (
       end
     end
   end
-  logic [31:0]                rs1_s[RS_SIZE-1:0];
-  logic [31:0]                rs2_s[RS_SIZE-1:0];
-  logic [31:0]                instr_s[RS_SIZE-1:0];
-  logic [31:0]                pc_s[RS_SIZE-1:0];
-  logic [$clog2(ROB_SIZE)-1:0]rd_s[RS_SIZE-1:0];
 
   // Slot output mux
   always_comb begin
